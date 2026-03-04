@@ -161,3 +161,40 @@ else
     --state open \
     --json "$json_fields")
 fi
+
+# ── Output generation ────────────────────────────────────────────────
+
+JQ_TIMESTAMP='
+  (.updatedAt | sub("\\.[0-9]+Z$"; "Z") | strptime("%Y-%m-%dT%H:%M:%SZ") | mktime | . - 21600 | strftime("%b %d %I:%M%p")
+    | sub("^(?<pre>.* )0"; "\(.pre)")
+    | sub("(?<h>[0-9]+:[0-9]+)(?<p>AM|PM)"; "\(.h)\(.p | ascii_downcase)")
+  ) as $updated'
+
+# HTML with <a> links + Slack emoji (for clipboard rich text)
+html=$(echo "$json" | jq -r "[.[] | ${JQ_SLACK_EMOJI} | ${JQ_TIMESTAMP} | \"\(\$emoji) \(.title) <a href=\\\"\(.url)\\\">#\(.number)</a>  \(\$updated)\"] | join(\"<br>\")")
+
+# Plain text with Slack emoji (clipboard fallback)
+slack_plain=$(echo "$json" | jq -r ".[] | ${JQ_SLACK_EMOJI} | ${JQ_TIMESTAMP} | \"\(\$emoji) \(.title) #\(.number)  \(\$updated)\"")
+
+# Terminal output with ANSI colored icons and OSC 8 clickable links
+terminal_plain=$(echo "$json" | jq -r ".[] | ${JQ_TERMINAL_ICON} | ${JQ_TIMESTAMP} | \"\(\$icon) \(.title) \u001b]8;;\(.url)\u001b\\\\#\(.number)\u001b]8;;\u001b\\\\  \(\$updated)\"")
+
+# ── Clipboard ────────────────────────────────────────────────────────
+
+export CLIPBOARD_HTML="$html"
+export CLIPBOARD_PLAIN="$slack_plain"
+swift -e '
+import AppKit
+let html = ProcessInfo.processInfo.environment["CLIPBOARD_HTML"]!
+let plain = ProcessInfo.processInfo.environment["CLIPBOARD_PLAIN"]!
+let pb = NSPasteboard.general
+pb.clearContents()
+pb.setString(html, forType: .html)
+pb.setString(plain, forType: .string)
+'
+
+# ── Terminal display ─────────────────────────────────────────────────
+
+echo -e "$terminal_plain"
+echo ""
+echo "Copied to clipboard — Cmd+V into Slack for clickable links"
