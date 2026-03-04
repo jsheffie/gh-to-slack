@@ -44,13 +44,13 @@ List your recent PRs formatted for Slack. Copies rich text to clipboard — Cmd+
 
 ```bash
 # Open, ready-for-review PRs authored by you
-./scripts/gh-pr-to-slack.sh
+gh-pr-to-slack
 
 # All PRs (merged, closed, draft, etc.)
-./scripts/gh-pr-to-slack.sh --all
+gh-pr-to-slack --all
 
 # Specific PRs by number
-./scripts/gh-pr-to-slack.sh 12595 12593
+gh-pr-to-slack 12595 12593
 ```
 
 Each PR is prefixed with a status emoji:
