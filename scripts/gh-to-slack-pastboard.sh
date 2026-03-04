@@ -118,3 +118,46 @@ else
       end
     ) as $icon'
 fi
+
+# ── Arg parsing ──────────────────────────────────────────────────────
+
+show_all=false
+numbers=()
+
+for arg in "$@"; do
+  case "$arg" in
+    -h|--help) usage ;;
+    --all) show_all=true ;;
+    *) numbers+=("$arg") ;;
+  esac
+done
+
+# ── JSON fetching ────────────────────────────────────────────────────
+
+if [ ${#numbers[@]} -gt 0 ]; then
+  # Fetch each specified item individually and combine into a JSON array
+  json="["
+  first=true
+  for num in "${numbers[@]}"; do
+    item_json=$(gh "$gh_cmd" view "$num" --json "$json_fields")
+    if [ "$first" = true ]; then
+      first=false
+    else
+      json+=","
+    fi
+    json+="$item_json"
+  done
+  json+="]"
+elif [ "$show_all" = true ]; then
+  json=$(gh "$gh_cmd" list \
+    $gh_list_filter \
+    --limit 10 \
+    --state all \
+    --json "$json_fields")
+else
+  json=$(gh "$gh_cmd" list \
+    $gh_list_filter \
+    --limit 10 \
+    --state open \
+    --json "$json_fields")
+fi
