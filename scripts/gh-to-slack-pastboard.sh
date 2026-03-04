@@ -42,8 +42,6 @@ fi
 if [ $# -eq 0 ]; then
   echo "Error: subcommand required (pr or issue)." >&2
   echo "" >&2
-  usage_error=true
-  # Print usage to stderr and exit 1
   cat >&2 <<EOF
 Usage: $(basename "$0") <pr|issue> [OPTIONS] [NUMBER ...]
 Run '$(basename "$0") --help' for more information.
@@ -71,3 +69,52 @@ EOF
     exit 1
     ;;
 esac
+
+# ── Subcommand-specific configuration ────────────────────────────────
+
+if [ "$subcommand" = "pr" ]; then
+  gh_cmd="pr"
+  gh_list_filter="--author @me"
+  json_fields="number,title,url,state,isDraft,reviewDecision,updatedAt"
+
+  JQ_SLACK_EMOJI='
+    (
+      if .state == "MERGED" then ":git--merged:"
+      elif .state == "CLOSED" then ":git--closed:"
+      elif .isDraft then ":git--draft:"
+      elif .reviewDecision == "APPROVED" then ":git--approved:"
+      elif .reviewDecision == "CHANGES_REQUESTED" then ":git--changes-required:"
+      else ":git--ready-for-review:"
+      end
+    ) as $emoji'
+
+  JQ_TERMINAL_ICON='
+    (
+      if .state == "MERGED" then "\u001b[35m●\u001b[0m"
+      elif .state == "CLOSED" then "\u001b[31m●\u001b[0m"
+      elif .isDraft then "\u001b[90m●\u001b[0m"
+      elif .reviewDecision == "APPROVED" then "\u001b[32m✓\u001b[0m"
+      elif .reviewDecision == "CHANGES_REQUESTED" then "\u001b[33m!\u001b[0m"
+      else "\u001b[33m●\u001b[0m"
+      end
+    ) as $icon'
+
+else
+  gh_cmd="issue"
+  gh_list_filter="--assignee @me"
+  json_fields="number,title,url,state,updatedAt"
+
+  JQ_SLACK_EMOJI='
+    (
+      if .state == "CLOSED" then ":git--closed:"
+      else ":git--issue:"
+      end
+    ) as $emoji'
+
+  JQ_TERMINAL_ICON='
+    (
+      if .state == "CLOSED" then "\u001b[31m●\u001b[0m"
+      else "\u001b[33m●\u001b[0m"
+      end
+    ) as $icon'
+fi
