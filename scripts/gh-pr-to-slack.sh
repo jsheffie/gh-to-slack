@@ -28,6 +28,11 @@ EOF
   exit 0
 }
 
+if ! gh repo view --json name >/dev/null 2>&1; then
+  echo "Error: not in a GitHub repository. Run this from inside a repo." >&2
+  exit 1
+fi
+
 show_all=false
 pr_numbers=()
 
