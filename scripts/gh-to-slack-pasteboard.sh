@@ -15,7 +15,7 @@ Subcommands:
   issue       List issues assigned to you.
 
 Options:
-  --all       Show all items (merged, closed, draft, etc.)
+  --all       Show all items regardless of state (open, closed, merged, etc.)
               Default shows only open items.
   -h, --help  Show this help message and exit.
 
@@ -39,13 +39,15 @@ if ! gh repo view --json name >/dev/null 2>&1; then
   exit 1
 fi
 
+usage_hint() {
+  echo "Usage: $(basename "$0") <pr|issue> [OPTIONS] [NUMBER ...]" >&2
+  echo "Run '$(basename "$0") --help' for more information." >&2
+}
+
 if [ $# -eq 0 ]; then
   echo "Error: subcommand required (pr or issue)." >&2
   echo "" >&2
-  cat >&2 <<EOF
-Usage: $(basename "$0") <pr|issue> [OPTIONS] [NUMBER ...]
-Run '$(basename "$0") --help' for more information.
-EOF
+  usage_hint
   exit 1
 fi
 
@@ -62,10 +64,7 @@ case "$subcommand" in
   *)
     echo "Error: unknown subcommand '$subcommand'." >&2
     echo "" >&2
-    cat >&2 <<EOF
-Usage: $(basename "$0") <pr|issue> [OPTIONS] [NUMBER ...]
-Run '$(basename "$0") --help' for more information.
-EOF
+    usage_hint
     exit 1
     ;;
 esac
@@ -74,7 +73,7 @@ esac
 
 if [ "$subcommand" = "pr" ]; then
   gh_cmd="pr"
-  gh_list_filter="--author @me"
+  gh_list_filter=(--author @me)
   json_fields="number,title,url,state,isDraft,reviewDecision,updatedAt"
 
   JQ_SLACK_EMOJI='
@@ -101,7 +100,7 @@ if [ "$subcommand" = "pr" ]; then
 
 else
   gh_cmd="issue"
-  gh_list_filter="--assignee @me"
+  gh_list_filter=(--assignee @me)
   json_fields="number,title,url,state,updatedAt"
 
   JQ_SLACK_EMOJI='
@@ -150,13 +149,13 @@ if [ ${#numbers[@]} -gt 0 ]; then
   json+="]"
 elif [ "$show_all" = true ]; then
   json=$(gh "$gh_cmd" list \
-    $gh_list_filter \
+    "${gh_list_filter[@]}" \
     --limit 10 \
     --state all \
     --json "$json_fields")
 else
   json=$(gh "$gh_cmd" list \
-    $gh_list_filter \
+    "${gh_list_filter[@]}" \
     --limit 10 \
     --state open \
     --json "$json_fields")
@@ -195,6 +194,6 @@ pb.setString(plain, forType: .string)
 
 # ── Terminal display ─────────────────────────────────────────────────
 
-echo -e "$terminal_plain"
+printf '%s\n' "$terminal_plain"
 echo ""
 echo "Copied to clipboard — Cmd+V into Slack for clickable links"
