@@ -15,6 +15,9 @@ macOS shell scripts that format GitHub CLI (`gh`) output (PRs, issues, etc.) int
    ```bash
    curl -fsSL https://raw.githubusercontent.com/jsheffie/gh-to-slack/0.1/scripts/gh-pr-to-slack.sh \
      -o ~/bin/gh-pr-to-slack && chmod +x ~/bin/gh-pr-to-slack
+
+   curl -fsSL https://raw.githubusercontent.com/jsheffie/gh-to-slack/0.1/scripts/gh-issue-to-slack.sh \
+     -o ~/bin/gh-issue-to-slack && chmod +x ~/bin/gh-issue-to-slack
    ```
 
 3. Add `~/bin` to your PATH (if not already there):
@@ -64,9 +67,31 @@ Each PR is prefixed with a status emoji:
 | `:git--changes-required:` | Changes requested |
 | `:git--ready-for-review:` | Ready for review |
 
+### gh-issue-to-slack
+
+List your recent issues formatted for Slack. Copies rich text to clipboard — Cmd+V into Slack gives clickable issue links.
+
+```bash
+# Open issues assigned to you
+gh-issue-to-slack
+
+# All issues (open + closed)
+gh-issue-to-slack --all
+
+# Specific issues by number
+gh-issue-to-slack 42 57
+```
+
+Each issue is prefixed with a status emoji:
+
+| Emoji | State |
+|---|---|
+| `:git--issue:` | Open |
+| `:git--closed:` | Closed |
+
 ## How It Works
 
-1. Fetches PR data as JSON via `gh`
+1. Fetches PR/issue data as JSON via `gh`
 2. Transforms it with `jq` into HTML (with `<a>` links) and plain text
 3. Copies both formats to the macOS clipboard using an inline Swift snippet — Slack preserves hyperlinks from the HTML pasteboard type
 
