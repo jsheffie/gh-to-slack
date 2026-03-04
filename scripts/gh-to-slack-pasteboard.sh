@@ -172,7 +172,7 @@ JQ_TIMESTAMP='
 html=$(echo "$json" | jq -r "[.[] | ${JQ_SLACK_EMOJI} | ${JQ_TIMESTAMP} | \"\(\$updated) \(\$emoji) \(.title) <a href=\\\"\(.url)\\\">#\(.number)</a>\"] | join(\"<br>\")")
 
 # Plain text with Slack emoji (clipboard fallback)
-slack_plain=$(echo "$json" | jq -r ".[] | ${JQ_SLACK_EMOJI} | ${JQ_TIMESTAMP} | \"\(\$updated) \(\$emoji) \(.title) #\(.number)\"")
+slack_plain=$(echo "$json" | jq -r ".[] | ${JQ_SLACK_EMOJI} | ${JQ_TIMESTAMP} | \"\`\(\$updated)\` \(\$emoji) \(.title) #\(.number)\"")
 
 # Terminal output with ANSI colored icons and OSC 8 clickable links
 terminal_plain=$(echo "$json" | jq -r ".[] | ${JQ_TERMINAL_ICON} | ${JQ_TIMESTAMP} | \"\(\$updated) \(\$icon) \(.title) \u001b]8;;\(.url)\u001b\\\\#\(.number)\u001b]8;;\u001b\\\\\"")
