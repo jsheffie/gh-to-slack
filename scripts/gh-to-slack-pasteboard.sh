@@ -169,7 +169,8 @@ JQ_TIMESTAMP='
   ) as $updated'
 
 # HTML with <a> links + Slack emoji (for clipboard rich text)
-html=$(echo "$json" | jq -r "[.[] | ${JQ_SLACK_EMOJI} | ${JQ_TIMESTAMP} | \"\(\$updated) \(\$emoji) \(.title) <a href=\\\"\(.url)\\\">#\(.number)</a>\"] | join(\"<br>\")")
+# <code>\($updated)</code> \($emoji)
+html=$(echo "$json" | jq -r "[.[] | ${JQ_SLACK_EMOJI} | ${JQ_TIMESTAMP} | \"<code>\(\$updated)</code> \(\$emoji) \(.title) <a href=\\\"\(.url)\\\">#\(.number)</a>\"] | join(\"<br>\")")
 
 # Plain text with Slack emoji (clipboard fallback)
 slack_plain=$(echo "$json" | jq -r ".[] | ${JQ_SLACK_EMOJI} | ${JQ_TIMESTAMP} | \"\`\(\$updated)\` \(\$emoji) \(.title) #\(.number)\"")
