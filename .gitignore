@@ -2,6 +2,8 @@
 __pycache__/
 *.py[codz]
 *$py.class
+# Ignore Claude Plans
+docs/
 
 # C extensions
 *.so
