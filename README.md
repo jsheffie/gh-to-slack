@@ -13,7 +13,7 @@ macOS shell script that formats GitHub CLI (`gh`) output (PRs, issues, etc.) int
 2. Download the script and make executable:
 
    ```bash
-   curl -fsSL https://raw.githubusercontent.com/jsheffie/gh-to-slack/0.2/scripts/gh-to-slack-pasteboard.sh \
+   curl -fsSL https://raw.githubusercontent.com/jsheffie/gh-to-slack/0.3/scripts/gh-to-slack-pasteboard.sh \
      -o ~/bin/gh-to-slack-pasteboard && chmod +x ~/bin/gh-to-slack-pasteboard
    ```
 
@@ -55,7 +55,7 @@ Terminal output uses ANSI-colored status icons for quick visual scanning. The `#
 
 ### PR Status Emoji (Slack)
 
-Each PR is prefixed with a status emoji in the clipboard output:
+Each line is formatted as: `date emoji title #number`. PRs use these status emoji:
 
 | Emoji | State |
 |---|---|
@@ -68,7 +68,7 @@ Each PR is prefixed with a status emoji in the clipboard output:
 
 ### Issue Status Emoji (Slack)
 
-Each issue is prefixed with a status emoji in the clipboard output:
+Issues use these status emoji:
 
 | Emoji | State |
 |---|---|
