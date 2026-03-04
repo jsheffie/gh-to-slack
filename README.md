@@ -2,6 +2,33 @@
 
 macOS shell scripts that format GitHub CLI (`gh`) output (PRs, issues, etc.) into rich text and copy it to the clipboard for pasting into Slack with clickable links and custom emoji.
 
+## Install
+
+1. Create `~/bin` if it doesn't exist:
+
+   ```bash
+   mkdir -p ~/bin
+   ```
+
+2. Download the script(s) and make executable:
+
+   ```bash
+   curl -fsSL https://raw.githubusercontent.com/jsheffie/gh-to-slack/0.1/scripts/gh-pr-to-slack.sh \
+     -o ~/bin/gh-pr-to-slack && chmod +x ~/bin/gh-pr-to-slack
+   ```
+
+3. Add `~/bin` to your PATH (if not already there):
+
+   **zsh** (`~/.zshrc`):
+   ```bash
+   echo 'export PATH="$HOME/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
+   ```
+
+   **bash** (`~/.bashrc`):
+   ```bash
+   echo 'export PATH="$HOME/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
+   ```
+
 ## Dependencies
 
 - macOS (uses `NSPasteboard` via Swift for clipboard access)
@@ -17,13 +44,13 @@ List your recent PRs formatted for Slack. Copies rich text to clipboard — Cmd+
 
 ```bash
 # Open, ready-for-review PRs authored by you
-./scripts/gh-pr-to-slack.sh
+gh-pr-to-slack
 
 # All PRs (merged, closed, draft, etc.)
-./scripts/gh-pr-to-slack.sh --all
+gh-pr-to-slack --all
 
 # Specific PRs by number
-./scripts/gh-pr-to-slack.sh 12595 12593
+gh-pr-to-slack 12595 12593
 ```
 
 Each PR is prefixed with a status emoji:
