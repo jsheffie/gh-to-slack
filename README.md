@@ -1,6 +1,6 @@
 # gh-to-slack
 
-macOS shell scripts that format GitHub CLI (`gh`) output (PRs, issues, etc.) into rich text and copy it to the clipboard for pasting into Slack with clickable links and custom emoji.
+macOS shell script that formats GitHub CLI (`gh`) output (PRs, issues, etc.) into rich text and copies it to the clipboard for pasting into Slack with clickable links and custom emoji.
 
 ## Install
 
@@ -10,14 +10,11 @@ macOS shell scripts that format GitHub CLI (`gh`) output (PRs, issues, etc.) int
    mkdir -p ~/bin
    ```
 
-2. Download the script(s) and make executable:
+2. Download the script and make executable:
 
    ```bash
-   curl -fsSL https://raw.githubusercontent.com/jsheffie/gh-to-slack/0.1/scripts/gh-pr-to-slack.sh \
-     -o ~/bin/gh-pr-to-slack && chmod +x ~/bin/gh-pr-to-slack
-
-   curl -fsSL https://raw.githubusercontent.com/jsheffie/gh-to-slack/0.1/scripts/gh-issue-to-slack.sh \
-     -o ~/bin/gh-issue-to-slack && chmod +x ~/bin/gh-issue-to-slack
+   curl -fsSL https://raw.githubusercontent.com/jsheffie/gh-to-slack/0.1/scripts/gh-to-slack-pasteboard.sh \
+     -o ~/bin/gh-to-slack-pasteboard && chmod +x ~/bin/gh-to-slack-pasteboard
    ```
 
 3. Add `~/bin` to your PATH (if not already there):
@@ -41,22 +38,24 @@ macOS shell scripts that format GitHub CLI (`gh`) output (PRs, issues, etc.) int
 
 ## Usage
 
-### gh-pr-to-slack
-
-List your recent PRs formatted for Slack. Copies rich text to clipboard — Cmd+V into Slack gives clickable PR links.
+List your recent PRs or issues formatted for Slack. Copies rich text to clipboard — Cmd+V into Slack gives clickable links.
 
 ```bash
-# Open, ready-for-review PRs authored by you
-gh-pr-to-slack
-
-# All PRs (merged, closed, draft, etc.)
-gh-pr-to-slack --all
-
-# Specific PRs by number
-gh-pr-to-slack 12595 12593
+gh-to-slack-pasteboard pr                    # Open, ready-for-review PRs
+gh-to-slack-pasteboard pr --all              # All PRs
+gh-to-slack-pasteboard pr 12595 12593        # Specific PRs
+gh-to-slack-pasteboard issue                 # Open issues assigned to me
+gh-to-slack-pasteboard issue --all           # All issues
+gh-to-slack-pasteboard issue 42 57           # Specific issues
 ```
 
-Each PR is prefixed with a status emoji:
+### Terminal Output
+
+Terminal output uses ANSI-colored status icons for quick visual scanning. The `#number` for each PR or issue is a clickable hyperlink in supported terminals (iTerm2, Terminal.app, Warp, etc.).
+
+### PR Status Emoji (Slack)
+
+Each PR is prefixed with a status emoji in the clipboard output:
 
 | Emoji | State |
 |---|---|
@@ -67,22 +66,9 @@ Each PR is prefixed with a status emoji:
 | `:git--changes-required:` | Changes requested |
 | `:git--ready-for-review:` | Ready for review |
 
-### gh-issue-to-slack
+### Issue Status Emoji (Slack)
 
-List your recent issues formatted for Slack. Copies rich text to clipboard — Cmd+V into Slack gives clickable issue links.
-
-```bash
-# Open issues assigned to you
-gh-issue-to-slack
-
-# All issues (open + closed)
-gh-issue-to-slack --all
-
-# Specific issues by number
-gh-issue-to-slack 42 57
-```
-
-Each issue is prefixed with a status emoji:
+Each issue is prefixed with a status emoji in the clipboard output:
 
 | Emoji | State |
 |---|---|
