@@ -198,14 +198,18 @@ if [ "$subcommand" = "activity" ]; then
     ) as $icon'
 
   if [ "$user_display" = true ]; then
-    JQ_ISSUE_USER='(if (.assignees | length) > 0 then " @" + .assignees[0].login else "" end) as $user'
+    JQ_ISSUE_USER_HTML='(if (.assignees | length) > 0 then " <a href=\"https://github.com/" + .assignees[0].login + "\">@" + .assignees[0].login + "</a>" else "" end) as $user'
+    JQ_ISSUE_USER_PLAIN='(if (.assignees | length) > 0 then " @" + .assignees[0].login else "" end) as $user'
+    JQ_ISSUE_USER_TERM='(if (.assignees | length) > 0 then " \u001b]8;;https://github.com/" + .assignees[0].login + "\u001b\\@" + .assignees[0].login + "\u001b]8;;\u001b\\" else "" end) as $user'
   else
-    JQ_ISSUE_USER='"" as $user'
+    JQ_ISSUE_USER_HTML='"" as $user'
+    JQ_ISSUE_USER_PLAIN='"" as $user'
+    JQ_ISSUE_USER_TERM='"" as $user'
   fi
 
-  issue_html=$(echo "$issue_json" | jq -r "[sort_by(.updatedAt) | reverse | .[] | ${JQ_ISSUE_EMOJI} | ${JQ_TIMESTAMP} | ${JQ_ISSUE_USER} | \"<code>\(\$updated)</code> \(\$emoji) \(.title)\(\$user) <a href=\\\"\(.url)\\\">#\(.number)</a>\"] | join(\"<br>\")")
-  issue_plain=$(echo "$issue_json" | jq -r "sort_by(.updatedAt) | reverse | .[] | ${JQ_ISSUE_EMOJI} | ${JQ_TIMESTAMP} | ${JQ_ISSUE_USER} | \"\`\(\$updated)\` \(\$emoji) \(.title)\(\$user) #\(.number)\"")
-  issue_terminal=$(echo "$issue_json" | jq -r "sort_by(.updatedAt) | reverse | .[] | ${JQ_ISSUE_ICON} | ${JQ_TIMESTAMP} | ${JQ_ISSUE_USER} | \"\(\$updated) \(\$icon) \(.title)\(\$user) \u001b]8;;\(.url)\u001b\\\\#\(.number)\u001b]8;;\u001b\\\\\"")
+  issue_html=$(echo "$issue_json" | jq -r "[sort_by(.updatedAt) | reverse | .[] | ${JQ_ISSUE_EMOJI} | ${JQ_TIMESTAMP} | ${JQ_ISSUE_USER_HTML} | (.title | gsub(\"<\";\"&lt;\") | gsub(\">\";\"&gt;\")) as \$safe_title | \"<code>\(\$updated)</code> \(\$emoji) \(\$safe_title)\(\$user) <a href=\\\"\(.url)\\\">#\(.number)</a>\"] | join(\"<br>\")")
+  issue_plain=$(echo "$issue_json" | jq -r "sort_by(.updatedAt) | reverse | .[] | ${JQ_ISSUE_EMOJI} | ${JQ_TIMESTAMP} | ${JQ_ISSUE_USER_PLAIN} | \"\`\(\$updated)\` \(\$emoji) \(.title)\(\$user) #\(.number)\"")
+  issue_terminal=$(echo "$issue_json" | jq -r "sort_by(.updatedAt) | reverse | .[] | ${JQ_ISSUE_ICON} | ${JQ_TIMESTAMP} | ${JQ_ISSUE_USER_TERM} | \"\(\$updated) \(\$icon) \(.title)\(\$user) \u001b]8;;\(.url)\u001b\\\\#\(.number)\u001b]8;;\u001b\\\\\"")
 
   # ── Fetch PRs ──────────────────────────────────────────────────────
 
@@ -234,14 +238,18 @@ if [ "$subcommand" = "activity" ]; then
     ) as $icon'
 
   if [ "$user_display" = true ]; then
-    JQ_PR_USER='(" @" + .author.login) as $user'
+    JQ_PR_USER_HTML='(" <a href=\"https://github.com/" + .author.login + "\">@" + .author.login + "</a>") as $user'
+    JQ_PR_USER_PLAIN='(" @" + .author.login) as $user'
+    JQ_PR_USER_TERM='(" \u001b]8;;https://github.com/" + .author.login + "\u001b\\@" + .author.login + "\u001b]8;;\u001b\\") as $user'
   else
-    JQ_PR_USER='"" as $user'
+    JQ_PR_USER_HTML='"" as $user'
+    JQ_PR_USER_PLAIN='"" as $user'
+    JQ_PR_USER_TERM='"" as $user'
   fi
 
-  pr_html=$(echo "$pr_json" | jq -r "[sort_by(.updatedAt) | reverse | .[] | ${JQ_PR_EMOJI} | ${JQ_TIMESTAMP} | ${JQ_PR_USER} | \"<code>\(\$updated)</code> \(\$emoji) \(.title)\(\$user) <a href=\\\"\(.url)\\\">#\(.number)</a>\"] | join(\"<br>\")")
-  pr_plain=$(echo "$pr_json" | jq -r "sort_by(.updatedAt) | reverse | .[] | ${JQ_PR_EMOJI} | ${JQ_TIMESTAMP} | ${JQ_PR_USER} | \"\`\(\$updated)\` \(\$emoji) \(.title)\(\$user) #\(.number)\"")
-  pr_terminal=$(echo "$pr_json" | jq -r "sort_by(.updatedAt) | reverse | .[] | ${JQ_PR_ICON} | ${JQ_TIMESTAMP} | ${JQ_PR_USER} | \"\(\$updated) \(\$icon) \(.title)\(\$user) \u001b]8;;\(.url)\u001b\\\\#\(.number)\u001b]8;;\u001b\\\\\"")
+  pr_html=$(echo "$pr_json" | jq -r "[sort_by(.updatedAt) | reverse | .[] | ${JQ_PR_EMOJI} | ${JQ_TIMESTAMP} | ${JQ_PR_USER_HTML} | (.title | gsub(\"<\";\"&lt;\") | gsub(\">\";\"&gt;\")) as \$safe_title | \"<code>\(\$updated)</code> \(\$emoji) \(\$safe_title)\(\$user) <a href=\\\"\(.url)\\\">#\(.number)</a>\"] | join(\"<br>\")")
+  pr_plain=$(echo "$pr_json" | jq -r "sort_by(.updatedAt) | reverse | .[] | ${JQ_PR_EMOJI} | ${JQ_TIMESTAMP} | ${JQ_PR_USER_PLAIN} | \"\`\(\$updated)\` \(\$emoji) \(.title)\(\$user) #\(.number)\"")
+  pr_terminal=$(echo "$pr_json" | jq -r "sort_by(.updatedAt) | reverse | .[] | ${JQ_PR_ICON} | ${JQ_TIMESTAMP} | ${JQ_PR_USER_TERM} | \"\(\$updated) \(\$icon) \(.title)\(\$user) \u001b]8;;\(.url)\u001b\\\\#\(.number)\u001b]8;;\u001b\\\\\"")
 
   # ── Assemble sections ──────────────────────────────────────────────
 
@@ -413,7 +421,7 @@ fetch_json() {
 # Requires: json, JQ_SLACK_EMOJI, JQ_TERMINAL_ICON, JQ_TIMESTAMP
 # Sets: html, slack_plain, terminal_plain
 format_output() {
-  html=$(echo "$json" | jq -r "[sort_by(.updatedAt) | reverse | .[] | ${JQ_SLACK_EMOJI} | ${JQ_TIMESTAMP} | \"<code>\(\$updated)</code> \(\$emoji) \(.title) <a href=\\\"\(.url)\\\">#\(.number)</a>\"] | join(\"<br>\")")
+  html=$(echo "$json" | jq -r "[sort_by(.updatedAt) | reverse | .[] | ${JQ_SLACK_EMOJI} | ${JQ_TIMESTAMP} | (.title | gsub(\"<\";\"&lt;\") | gsub(\">\";\"&gt;\")) as \$safe_title | \"<code>\(\$updated)</code> \(\$emoji) \(\$safe_title) <a href=\\\"\(.url)\\\">#\(.number)</a>\"] | join(\"<br>\")")
   slack_plain=$(echo "$json" | jq -r "sort_by(.updatedAt) | reverse | .[] | ${JQ_SLACK_EMOJI} | ${JQ_TIMESTAMP} | \"\`\(\$updated)\` \(\$emoji) \(.title) #\(.number)\"")
   terminal_plain=$(echo "$json" | jq -r "sort_by(.updatedAt) | reverse | .[] | ${JQ_TERMINAL_ICON} | ${JQ_TIMESTAMP} | \"\(\$updated) \(\$icon) \(.title) \u001b]8;;\(.url)\u001b\\\\#\(.number)\u001b]8;;\u001b\\\\\"")
 }
