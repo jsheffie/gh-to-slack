@@ -5,7 +5,7 @@ set -euo pipefail
 
 usage() {
   cat <<EOF
-Usage: $(basename "$0") <pr|issue> [OPTIONS] [NUMBER ...]
+Usage: $(basename "$0") <pr|issue|users> [OPTIONS] [NUMBER ...]
 
 Format GitHub PRs or issues for pasting into Slack.
 Copies rich text to clipboard — Cmd+V into Slack gives clickable links.
@@ -13,6 +13,7 @@ Copies rich text to clipboard — Cmd+V into Slack gives clickable links.
 Subcommands:
   pr          List PRs authored by you.
   issue       List issues assigned to you.
+  users       List repository collaborators with links to issues and PRs.
 
 Options:
   --all       Show all items regardless of state (open, closed, merged, etc.)
@@ -30,6 +31,7 @@ Examples:
   $(basename "$0") issue                 # Open issues assigned to me
   $(basename "$0") issue --all           # All issues (open + closed)
   $(basename "$0") issue 42 57           # Specific issues by number
+  $(basename "$0") users                   # List collaborators with links
 EOF
   exit 0
 }
@@ -40,12 +42,12 @@ if ! gh repo view --json name >/dev/null 2>&1; then
 fi
 
 usage_hint() {
-  echo "Usage: $(basename "$0") <pr|issue> [OPTIONS] [NUMBER ...]" >&2
+  echo "Usage: $(basename "$0") <pr|issue|users> [OPTIONS] [NUMBER ...]" >&2
   echo "Run '$(basename "$0") --help' for more information." >&2
 }
 
 if [ $# -eq 0 ]; then
-  echo "Error: subcommand required (pr or issue)." >&2
+  echo "Error: subcommand required (pr, issue, or users)." >&2
   echo "" >&2
   usage_hint
   exit 1
@@ -55,7 +57,7 @@ subcommand="$1"
 shift
 
 case "$subcommand" in
-  pr|issue)
+  pr|issue|users)
     # Valid subcommand — continue
     ;;
   -h|--help)
@@ -68,6 +70,67 @@ case "$subcommand" in
     exit 1
     ;;
 esac
+
+# ── Users subcommand (short-circuit) ──────────────────────────────────
+
+if [ "$subcommand" = "users" ]; then
+  repo_slug=$(gh repo view --json owner,name --jq '.owner.login + "/" + .name')
+  repo_url="https://github.com/${repo_slug}"
+
+  users=$(gh api "repos/${repo_slug}/collaborators" --jq '.[].login' | sort)
+
+  if [ -z "$users" ]; then
+    echo "No collaborators found." >&2
+    exit 0
+  fi
+
+  html=""
+  slack_plain=""
+  terminal_plain=""
+
+  while IFS= read -r user; do
+    created_url="${repo_url}/issues/created_by/${user}"
+    assigned_url="${repo_url}/issues?q=assignee%3A${user}+is%3Aopen+"
+    prs_url="${repo_url}/pulls/${user}"
+
+    # HTML for Slack clipboard
+    line=":technologist: ${user}"
+    line+=" <a href=\"${created_url}\">created issues</a>"
+    line+=" | <a href=\"${assigned_url}\">assigned issues</a>"
+    line+=" | <a href=\"${prs_url}\">PRs</a>"
+    if [ -n "$html" ]; then html+="<br>"; fi
+    html+="$line"
+
+    # Plain text fallback for clipboard
+    plain_line=":technologist: ${user}  created issues | assigned issues | PRs"
+    if [ -n "$slack_plain" ]; then slack_plain+=$'\n'; fi
+    slack_plain+="$plain_line"
+
+    # Terminal with OSC 8 hyperlinks (using printf with \033 escapes, matching pr/issue format)
+    osc_line=$(printf ':technologist: %s  \033]8;;%s\033\\created issues\033]8;;\033\\ | \033]8;;%s\033\\assigned issues\033]8;;\033\\ | \033]8;;%s\033\\PRs\033]8;;\033\\' "$user" "$created_url" "$assigned_url" "$prs_url")
+    if [ -n "$terminal_plain" ]; then terminal_plain+=$'\n'; fi
+    terminal_plain+="$osc_line"
+  done <<< "$users"
+
+  # Copy to clipboard
+  export CLIPBOARD_HTML="$html"
+  export CLIPBOARD_PLAIN="$slack_plain"
+  swift -e '
+import AppKit
+let html = ProcessInfo.processInfo.environment["CLIPBOARD_HTML"]!
+let plain = ProcessInfo.processInfo.environment["CLIPBOARD_PLAIN"]!
+let pb = NSPasteboard.general
+pb.clearContents()
+pb.setString(html, forType: .html)
+pb.setString(plain, forType: .string)
+'
+
+  # Terminal display
+  printf '%s\n' "$terminal_plain"
+  echo ""
+  echo "Copied to clipboard — Cmd+V into Slack for clickable links"
+  exit 0
+fi
 
 # ── Subcommand-specific configuration ────────────────────────────────
 
