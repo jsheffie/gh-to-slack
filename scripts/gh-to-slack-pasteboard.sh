@@ -16,6 +16,8 @@ Subcommands:
   users       List repository collaborators with links to issues and PRs.
 
 Options:
+  --user USER Filter by GitHub user (repeatable, default: @me).
+  --limit N   Max items per user (default: 10).
   --all       Show all items regardless of state (open, closed, merged, etc.)
               Default shows only open items.
   -h, --help  Show this help message and exit.
@@ -31,6 +33,9 @@ Examples:
   $(basename "$0") issue                 # Open issues assigned to me
   $(basename "$0") issue --all           # All issues (open + closed)
   $(basename "$0") issue 42 57           # Specific issues by number
+  $(basename "$0") pr --user octocat          # Open PRs by octocat
+  $(basename "$0") issue --user bob --user ben # Issues for multiple users
+  $(basename "$0") pr --limit 20              # Open PRs, up to 20
   $(basename "$0") users                   # List collaborators with links
 EOF
   exit 0
@@ -185,44 +190,99 @@ fi
 
 show_all=false
 numbers=()
+limit=10
+users=()
+user_explicit=false
 
-for arg in "$@"; do
-  case "$arg" in
+while [ $# -gt 0 ]; do
+  case "$1" in
     -h|--help) usage ;;
     --all) show_all=true ;;
-    *) numbers+=("$arg") ;;
+    --limit)
+      shift
+      if [ $# -eq 0 ]; then
+        echo "Error: --limit requires a number." >&2
+        exit 1
+      fi
+      if ! [[ "$1" =~ ^[1-9][0-9]*$ ]]; then
+        echo "Error: --limit must be a positive integer, got '$1'." >&2
+        exit 1
+      fi
+      limit="$1"
+      ;;
+    --user)
+      shift
+      if [ $# -eq 0 ]; then
+        echo "Error: --user requires a username." >&2
+        exit 1
+      fi
+      users+=("$1")
+      user_explicit=true
+      ;;
+    *) numbers+=("$1") ;;
   esac
+  shift
 done
 
-# ── JSON fetching ────────────────────────────────────────────────────
-
-if [ ${#numbers[@]} -gt 0 ]; then
-  # Fetch each specified item individually and combine into a JSON array
-  json="["
-  first=true
-  for num in "${numbers[@]}"; do
-    item_json=$(gh "$gh_cmd" view "$num" --json "$json_fields")
-    if [ "$first" = true ]; then
-      first=false
-    else
-      json+=","
-    fi
-    json+="$item_json"
-  done
-  json+="]"
-elif [ "$show_all" = true ]; then
-  json=$(gh "$gh_cmd" list \
-    "${gh_list_filter[@]}" \
-    --limit 10 \
-    --state all \
-    --json "$json_fields")
-else
-  json=$(gh "$gh_cmd" list \
-    "${gh_list_filter[@]}" \
-    --limit 10 \
-    --state open \
-    --json "$json_fields")
+if [ ${#users[@]} -gt 1 ] && [ ${#numbers[@]} -gt 0 ]; then
+  echo "Error: cannot combine multiple --user with specific numbers." >&2
+  exit 1
 fi
+
+# Resolve @me to actual GitHub username
+resolve_user() {
+  local user="$1"
+  if [ "$user" = "@me" ]; then
+    gh api user --jq '.login'
+  else
+    echo "$user"
+  fi
+}
+
+# Generate header line for a user across all three output formats.
+# Sets: header_html, header_plain, header_terminal
+build_user_header() {
+  local user="$1"
+  local label
+  if [ "$subcommand" = "pr" ]; then
+    label="PRs"
+  else
+    label="Issues"
+  fi
+  local profile_url="https://github.com/${user}"
+  header_html=":technologist: ${label} for <a href=\"${profile_url}\">@${user}</a>"
+  header_plain=":technologist: ${label} for @${user}"
+  header_terminal=$(printf ':technologist: %s for \033]8;;%s\033\\@%s\033]8;;\033\\' "$label" "$profile_url" "$user")
+}
+
+# Fetch JSON for the current gh_list_filter, numbers, show_all, and limit settings.
+# Sets: json
+fetch_json() {
+  if [ ${#numbers[@]} -gt 0 ]; then
+    json="["
+    local first=true
+    for num in "${numbers[@]}"; do
+      local item_json
+      item_json=$(gh "$gh_cmd" view "$num" --json "$json_fields")
+      if [ "$first" = true ]; then first=false; else json+=","; fi
+      json+="$item_json"
+    done
+    json+="]"
+  elif [ "$show_all" = true ]; then
+    json=$(gh "$gh_cmd" list "${gh_list_filter[@]}" --limit "$limit" --state all --json "$json_fields")
+  else
+    json=$(gh "$gh_cmd" list "${gh_list_filter[@]}" --limit "$limit" --state open --json "$json_fields")
+  fi
+}
+
+# Format JSON into html, slack_plain, and terminal_plain.
+# Requires: json, JQ_SLACK_EMOJI, JQ_TERMINAL_ICON, JQ_TIMESTAMP
+# Sets: html, slack_plain, terminal_plain
+format_output() {
+  html=$(echo "$json" | jq -r "[sort_by(.updatedAt) | reverse | .[] | ${JQ_SLACK_EMOJI} | ${JQ_TIMESTAMP} | \"<code>\(\$updated)</code> \(\$emoji) \(.title) <a href=\\\"\(.url)\\\">#\(.number)</a>\"] | join(\"<br>\")")
+  slack_plain=$(echo "$json" | jq -r "sort_by(.updatedAt) | reverse | .[] | ${JQ_SLACK_EMOJI} | ${JQ_TIMESTAMP} | \"\`\(\$updated)\` \(\$emoji) \(.title) #\(.number)\"")
+  terminal_plain=$(echo "$json" | jq -r "sort_by(.updatedAt) | reverse | .[] | ${JQ_TERMINAL_ICON} | ${JQ_TIMESTAMP} | \"\(\$updated) \(\$icon) \(.title) \u001b]8;;\(.url)\u001b\\\\#\(.number)\u001b]8;;\u001b\\\\\"")
+}
 
 # ── Output generation ────────────────────────────────────────────────
 
@@ -231,15 +291,52 @@ JQ_TIMESTAMP='
     | sub("(?<h>[0-9]+:[0-9]+)(?<p>AM|PM)"; "\(.h)\(.p | ascii_downcase)")
   ) as $updated'
 
-# HTML with <a> links + Slack emoji (for clipboard rich text)
-# <code>\($updated)</code> \($emoji)
-html=$(echo "$json" | jq -r "[sort_by(.updatedAt) | reverse | .[] | ${JQ_SLACK_EMOJI} | ${JQ_TIMESTAMP} | \"<code>\(\$updated)</code> \(\$emoji) \(.title) <a href=\\\"\(.url)\\\">#\(.number)</a>\"] | join(\"<br>\")")
+if [ "$user_explicit" = true ] && [ ${#users[@]} -gt 0 ]; then
+  # ── Per-user loop ───────────────────────────────────────────────────
+  all_html=""
+  all_slack_plain=""
+  all_terminal_plain=""
 
-# Plain text with Slack emoji (clipboard fallback)
-slack_plain=$(echo "$json" | jq -r "sort_by(.updatedAt) | reverse | .[] | ${JQ_SLACK_EMOJI} | ${JQ_TIMESTAMP} | \"\`\(\$updated)\` \(\$emoji) \(.title) #\(.number)\"")
+  for user in "${users[@]}"; do
+    # Set filter for this user
+    if [ "$subcommand" = "pr" ]; then
+      gh_list_filter=(--author "$user")
+    else
+      gh_list_filter=(--assignee "$user")
+    fi
 
-# Terminal output with ANSI colored icons and OSC 8 clickable links
-terminal_plain=$(echo "$json" | jq -r "sort_by(.updatedAt) | reverse | .[] | ${JQ_TERMINAL_ICON} | ${JQ_TIMESTAMP} | \"\(\$updated) \(\$icon) \(.title) \u001b]8;;\(.url)\u001b\\\\#\(.number)\u001b]8;;\u001b\\\\\"")
+    fetch_json
+
+    # Build header (resolve @me to real username for display/links)
+    resolved_user=$(resolve_user "$user")
+    build_user_header "$resolved_user"
+
+    format_output
+
+    # Prepend header
+    html="${header_html}<br>${html}"
+    slack_plain="${header_plain}"$'\n'"${slack_plain}"
+    terminal_plain="${header_terminal}"$'\n'"${terminal_plain}"
+
+    # Accumulate with blank line separator
+    if [ -n "$all_html" ]; then
+      all_html+="<br><br>"
+      all_slack_plain+=$'\n\n'
+      all_terminal_plain+=$'\n\n'
+    fi
+    all_html+="$html"
+    all_slack_plain+="$slack_plain"
+    all_terminal_plain+="$terminal_plain"
+  done
+
+  html="$all_html"
+  slack_plain="$all_slack_plain"
+  terminal_plain="$all_terminal_plain"
+else
+  # ── Default path (no --user, same as today) ─────────────────────────
+  fetch_json
+  format_output
+fi
 
 # ── Clipboard ────────────────────────────────────────────────────────
 
