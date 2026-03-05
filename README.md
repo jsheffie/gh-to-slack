@@ -58,6 +58,10 @@ gh-to-slack-pasteboard issue 42 57           # Specific issues
 gh-to-slack-pasteboard pr --user octocat          # Open PRs by octocat
 gh-to-slack-pasteboard issue --user bob --user ben # Issues for multiple users
 gh-to-slack-pasteboard pr --limit 20              # Up to 20 PRs
+gh-to-slack-pasteboard activity                   # Recent issues & PRs
+gh-to-slack-pasteboard activity --user-display    # With linked usernames
+gh-to-slack-pasteboard activity --limit 5         # 5 items per section
+gh-to-slack-pasteboard users                      # List collaborators with links
 ```
 
 ### Terminal Output
