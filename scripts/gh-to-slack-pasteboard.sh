@@ -197,6 +197,10 @@ while [ $# -gt 0 ]; do
         echo "Error: --limit requires a number." >&2
         exit 1
       fi
+      if ! [[ "$1" =~ ^[1-9][0-9]*$ ]]; then
+        echo "Error: --limit must be a positive integer, got '$1'." >&2
+        exit 1
+      fi
       limit="$1"
       ;;
     *) numbers+=("$1") ;;
