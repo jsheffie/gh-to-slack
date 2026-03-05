@@ -5,7 +5,7 @@ set -euo pipefail
 
 usage() {
   cat <<EOF
-Usage: $(basename "$0") <pr|issue|users> [OPTIONS] [NUMBER ...]
+Usage: $(basename "$0") <pr|issue|activity|users> [OPTIONS] [NUMBER ...]
 
 Format GitHub PRs or issues for pasting into Slack.
 Copies rich text to clipboard — Cmd+V into Slack gives clickable links.
@@ -14,6 +14,7 @@ Subcommands:
   pr          List PRs authored by you.
   issue       List issues assigned to you.
   users       List repository collaborators with links to issues and PRs.
+  activity    Show recent issues and PRs across the repo.
 
 Options:
   --user USER Filter by GitHub user (repeatable, default: @me).
@@ -37,6 +38,9 @@ Examples:
   $(basename "$0") issue --user bob --user ben # Issues for multiple users
   $(basename "$0") pr --limit 20              # Open PRs, up to 20
   $(basename "$0") users                   # List collaborators with links
+  $(basename "$0") activity                # Recent issues & PRs
+  $(basename "$0") activity --user-display # With usernames shown
+  $(basename "$0") activity --limit 5      # 5 items per section
 EOF
   exit 0
 }
@@ -47,12 +51,12 @@ if ! gh repo view --json name >/dev/null 2>&1; then
 fi
 
 usage_hint() {
-  echo "Usage: $(basename "$0") <pr|issue|users> [OPTIONS] [NUMBER ...]" >&2
+  echo "Usage: $(basename "$0") <pr|issue|activity|users> [OPTIONS] [NUMBER ...]" >&2
   echo "Run '$(basename "$0") --help' for more information." >&2
 }
 
 if [ $# -eq 0 ]; then
-  echo "Error: subcommand required (pr, issue, or users)." >&2
+  echo "Error: subcommand required (pr, issue, activity, or users)." >&2
   echo "" >&2
   usage_hint
   exit 1
@@ -62,7 +66,7 @@ subcommand="$1"
 shift
 
 case "$subcommand" in
-  pr|issue|users)
+  pr|issue|activity|users)
     # Valid subcommand — continue
     ;;
   -h|--help)
