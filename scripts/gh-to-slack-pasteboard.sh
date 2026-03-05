@@ -3,6 +3,9 @@
 
 set -euo pipefail
 
+VERSION="1.0.1"
+RELEASES_URL="https://github.com/jsheffie/gh-to-slack/releases"
+
 usage() {
   cat <<EOF
 Usage: $(basename "$0") <pr|issue|activity|users> [OPTIONS] [NUMBER ...]
@@ -21,6 +24,7 @@ Options:
   --limit N   Max items per user (default: 10).
   --all       Show all items regardless of state (open, closed, merged, etc.)
               Default shows only open items.
+  --version   Show version and exit.
   -h, --help  Show this help message and exit.
 
 Arguments:
@@ -71,6 +75,11 @@ case "$subcommand" in
     ;;
   -h|--help)
     usage
+    ;;
+  --version)
+    echo "gh-to-slack-pasteboard ${VERSION}"
+    echo "${RELEASES_URL}"
+    exit 0
     ;;
   *)
     echo "Error: unknown subcommand '$subcommand'." >&2

@@ -21,7 +21,7 @@ brew install jsheffie/tap/gh-to-slack
 2. Download the script and make executable:
 
    ```bash
-   curl -fsSL https://raw.githubusercontent.com/jsheffie/gh-to-slack/0.8/scripts/gh-to-slack-pasteboard.sh \
+   curl -fsSL https://raw.githubusercontent.com/jsheffie/gh-to-slack/v1.0.1/scripts/gh-to-slack-pasteboard.sh \
      -o ~/bin/gh-to-slack-pasteboard && chmod +x ~/bin/gh-to-slack-pasteboard
    ```
 
