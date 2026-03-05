@@ -47,6 +47,9 @@ gh-to-slack-pasteboard pr 12595 12593        # Specific PRs
 gh-to-slack-pasteboard issue                 # Open issues assigned to me
 gh-to-slack-pasteboard issue --all           # All issues
 gh-to-slack-pasteboard issue 42 57           # Specific issues
+gh-to-slack-pasteboard pr --user octocat          # Open PRs by octocat
+gh-to-slack-pasteboard issue --user bob --user ben # Issues for multiple users
+gh-to-slack-pasteboard pr --limit 20              # Up to 20 PRs
 ```
 
 ### Terminal Output

@@ -16,6 +16,8 @@ Subcommands:
   users       List repository collaborators with links to issues and PRs.
 
 Options:
+  --user USER Filter by GitHub user (repeatable, default: @me).
+  --limit N   Max items per user (default: 10).
   --all       Show all items regardless of state (open, closed, merged, etc.)
               Default shows only open items.
   -h, --help  Show this help message and exit.
@@ -31,6 +33,9 @@ Examples:
   $(basename "$0") issue                 # Open issues assigned to me
   $(basename "$0") issue --all           # All issues (open + closed)
   $(basename "$0") issue 42 57           # Specific issues by number
+  $(basename "$0") pr --user octocat          # Open PRs by octocat
+  $(basename "$0") issue --user bob --user ben # Issues for multiple users
+  $(basename "$0") pr --limit 20              # Open PRs, up to 20
   $(basename "$0") users                   # List collaborators with links
 EOF
   exit 0
