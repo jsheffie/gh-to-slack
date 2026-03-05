@@ -224,14 +224,6 @@ if [ ${#users[@]} -gt 1 ] && [ ${#numbers[@]} -gt 0 ]; then
   exit 1
 fi
 
-if [ ${#users[@]} -eq 1 ]; then
-  if [ "$subcommand" = "pr" ]; then
-    gh_list_filter=(--author "${users[0]}")
-  else
-    gh_list_filter=(--assignee "${users[0]}")
-  fi
-fi
-
 # Generate header line for a user across all three output formats.
 # Sets: header_html, header_plain, header_terminal
 build_user_header() {
@@ -248,36 +240,6 @@ build_user_header() {
   header_terminal=$(printf ':technologist: %s for \033]8;;%s\033\\@%s\033]8;;\033\\' "$label" "$profile_url" "$user")
 }
 
-# ── JSON fetching ────────────────────────────────────────────────────
-
-if [ ${#numbers[@]} -gt 0 ]; then
-  # Fetch each specified item individually and combine into a JSON array
-  json="["
-  first=true
-  for num in "${numbers[@]}"; do
-    item_json=$(gh "$gh_cmd" view "$num" --json "$json_fields")
-    if [ "$first" = true ]; then
-      first=false
-    else
-      json+=","
-    fi
-    json+="$item_json"
-  done
-  json+="]"
-elif [ "$show_all" = true ]; then
-  json=$(gh "$gh_cmd" list \
-    "${gh_list_filter[@]}" \
-    --limit "$limit" \
-    --state all \
-    --json "$json_fields")
-else
-  json=$(gh "$gh_cmd" list \
-    "${gh_list_filter[@]}" \
-    --limit "$limit" \
-    --state open \
-    --json "$json_fields")
-fi
-
 # ── Output generation ────────────────────────────────────────────────
 
 JQ_TIMESTAMP='
@@ -285,21 +247,84 @@ JQ_TIMESTAMP='
     | sub("(?<h>[0-9]+:[0-9]+)(?<p>AM|PM)"; "\(.h)\(.p | ascii_downcase)")
   ) as $updated'
 
-# HTML with <a> links + Slack emoji (for clipboard rich text)
-# <code>\($updated)</code> \($emoji)
-html=$(echo "$json" | jq -r "[sort_by(.updatedAt) | reverse | .[] | ${JQ_SLACK_EMOJI} | ${JQ_TIMESTAMP} | \"<code>\(\$updated)</code> \(\$emoji) \(.title) <a href=\\\"\(.url)\\\">#\(.number)</a>\"] | join(\"<br>\")")
+if [ "$user_explicit" = true ] && [ ${#users[@]} -gt 0 ]; then
+  # ── Per-user loop ───────────────────────────────────────────────────
+  all_html=""
+  all_slack_plain=""
+  all_terminal_plain=""
 
-# Plain text with Slack emoji (clipboard fallback)
-slack_plain=$(echo "$json" | jq -r "sort_by(.updatedAt) | reverse | .[] | ${JQ_SLACK_EMOJI} | ${JQ_TIMESTAMP} | \"\`\(\$updated)\` \(\$emoji) \(.title) #\(.number)\"")
+  for user in "${users[@]}"; do
+    # Set filter for this user
+    if [ "$subcommand" = "pr" ]; then
+      gh_list_filter=(--author "$user")
+    else
+      gh_list_filter=(--assignee "$user")
+    fi
 
-# Terminal output with ANSI colored icons and OSC 8 clickable links
-terminal_plain=$(echo "$json" | jq -r "sort_by(.updatedAt) | reverse | .[] | ${JQ_TERMINAL_ICON} | ${JQ_TIMESTAMP} | \"\(\$updated) \(\$icon) \(.title) \u001b]8;;\(.url)\u001b\\\\#\(.number)\u001b]8;;\u001b\\\\\"")
+    # Fetch JSON for this user
+    if [ ${#numbers[@]} -gt 0 ]; then
+      # Single user + numbers (validated: only 1 user allowed with numbers)
+      json="["
+      first=true
+      for num in "${numbers[@]}"; do
+        item_json=$(gh "$gh_cmd" view "$num" --json "$json_fields")
+        if [ "$first" = true ]; then first=false; else json+=","; fi
+        json+="$item_json"
+      done
+      json+="]"
+    elif [ "$show_all" = true ]; then
+      json=$(gh "$gh_cmd" list "${gh_list_filter[@]}" --limit "$limit" --state all --json "$json_fields")
+    else
+      json=$(gh "$gh_cmd" list "${gh_list_filter[@]}" --limit "$limit" --state open --json "$json_fields")
+    fi
 
-if [ "$user_explicit" = true ] && [ ${#users[@]} -eq 1 ]; then
-  build_user_header "${users[0]}"
-  html="${header_html}<br>${html}"
-  slack_plain="${header_plain}"$'\n'"${slack_plain}"
-  terminal_plain="${header_terminal}"$'\n'"${terminal_plain}"
+    # Build header
+    build_user_header "$user"
+
+    # Generate formatted output for this user's items
+    user_html=$(echo "$json" | jq -r "[sort_by(.updatedAt) | reverse | .[] | ${JQ_SLACK_EMOJI} | ${JQ_TIMESTAMP} | \"<code>\(\$updated)</code> \(\$emoji) \(.title) <a href=\\\"\(.url)\\\">#\(.number)</a>\"] | join(\"<br>\")")
+    user_slack=$(echo "$json" | jq -r "sort_by(.updatedAt) | reverse | .[] | ${JQ_SLACK_EMOJI} | ${JQ_TIMESTAMP} | \"\`\(\$updated)\` \(\$emoji) \(.title) #\(.number)\"")
+    user_terminal=$(echo "$json" | jq -r "sort_by(.updatedAt) | reverse | .[] | ${JQ_TERMINAL_ICON} | ${JQ_TIMESTAMP} | \"\(\$updated) \(\$icon) \(.title) \u001b]8;;\(.url)\u001b\\\\#\(.number)\u001b]8;;\u001b\\\\\"")
+
+    # Prepend header
+    user_html="${header_html}<br>${user_html}"
+    user_slack="${header_plain}"$'\n'"${user_slack}"
+    user_terminal="${header_terminal}"$'\n'"${user_terminal}"
+
+    # Accumulate with blank line separator
+    if [ -n "$all_html" ]; then
+      all_html+="<br><br>"
+      all_slack_plain+=$'\n\n'
+      all_terminal_plain+=$'\n\n'
+    fi
+    all_html+="$user_html"
+    all_slack_plain+="$user_slack"
+    all_terminal_plain+="$user_terminal"
+  done
+
+  html="$all_html"
+  slack_plain="$all_slack_plain"
+  terminal_plain="$all_terminal_plain"
+else
+  # ── Default path (no --user, same as today) ─────────────────────────
+  if [ ${#numbers[@]} -gt 0 ]; then
+    json="["
+    first=true
+    for num in "${numbers[@]}"; do
+      item_json=$(gh "$gh_cmd" view "$num" --json "$json_fields")
+      if [ "$first" = true ]; then first=false; else json+=","; fi
+      json+="$item_json"
+    done
+    json+="]"
+  elif [ "$show_all" = true ]; then
+    json=$(gh "$gh_cmd" list "${gh_list_filter[@]}" --limit "$limit" --state all --json "$json_fields")
+  else
+    json=$(gh "$gh_cmd" list "${gh_list_filter[@]}" --limit "$limit" --state open --json "$json_fields")
+  fi
+
+  html=$(echo "$json" | jq -r "[sort_by(.updatedAt) | reverse | .[] | ${JQ_SLACK_EMOJI} | ${JQ_TIMESTAMP} | \"<code>\(\$updated)</code> \(\$emoji) \(.title) <a href=\\\"\(.url)\\\">#\(.number)</a>\"] | join(\"<br>\")")
+  slack_plain=$(echo "$json" | jq -r "sort_by(.updatedAt) | reverse | .[] | ${JQ_SLACK_EMOJI} | ${JQ_TIMESTAMP} | \"\`\(\$updated)\` \(\$emoji) \(.title) #\(.number)\"")
+  terminal_plain=$(echo "$json" | jq -r "sort_by(.updatedAt) | reverse | .[] | ${JQ_TERMINAL_ICON} | ${JQ_TIMESTAMP} | \"\(\$updated) \(\$icon) \(.title) \u001b]8;;\(.url)\u001b\\\\#\(.number)\u001b]8;;\u001b\\\\\"")
 fi
 
 # ── Clipboard ────────────────────────────────────────────────────────
