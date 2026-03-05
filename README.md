@@ -13,7 +13,7 @@ macOS shell script that formats GitHub CLI (`gh`) output (PRs, issues, etc.) int
 2. Download the script and make executable:
 
    ```bash
-   curl -fsSL https://raw.githubusercontent.com/jsheffie/gh-to-slack/0.6/scripts/gh-to-slack-pasteboard.sh \
+   curl -fsSL https://raw.githubusercontent.com/jsheffie/gh-to-slack/0.7/scripts/gh-to-slack-pasteboard.sh \
      -o ~/bin/gh-to-slack-pasteboard && chmod +x ~/bin/gh-to-slack-pasteboard
    ```
 
