@@ -7,7 +7,7 @@ macOS shell script that formats GitHub CLI (`gh`) output (PRs, issues, etc.) int
 ### Homebrew (recommended)
 
 ```bash
-brew install jsheffie/homebrew-tap/gh-to-slack
+brew install jsheffie/tap/gh-to-slack
 ```
 
 ### Manual
