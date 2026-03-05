@@ -48,16 +48,28 @@ brew install jsheffie/tap/gh-to-slack
 
 List your recent PRs or issues formatted for Slack. Copies rich text to clipboard — Cmd+V into Slack gives clickable links.
 
+**Indivual Developer Focused:**
+This usage efaults to `@me` usage for status reporting
 ```bash
 gh-to-slack-pasteboard pr                    # Open, ready-for-review PRs
 gh-to-slack-pasteboard pr --all              # All PRs
 gh-to-slack-pasteboard pr 12595 12593        # Specific PRs
+gh-to-slack-pasteboard pr --limit 20              # Up to 20 PRs
 gh-to-slack-pasteboard issue                 # Open issues assigned to me
 gh-to-slack-pasteboard issue --all           # All issues
 gh-to-slack-pasteboard issue 42 57           # Specific issues
+gh-to-slack-pasteboard issue --limit 5       # Show 5 issue
+```
+
+**Team/Management Focused** 
+
+```bash
+gh-to-slack-pasteboard activity                   # Recent issues & PRs (defautlts to 10 each)
+gh-to-slack-pasteboard activity --user-display    # With linked usernames
+gh-to-slack-pasteboard activity --limit 5         # 5 items per section
 gh-to-slack-pasteboard pr --user octocat          # Open PRs by octocat
 gh-to-slack-pasteboard issue --user bob --user ben # Issues for multiple users
-gh-to-slack-pasteboard pr --limit 20              # Up to 20 PRs
+gh-to-slack-pasteboard users                      # List collaborators with links
 ```
 
 ### Terminal Output
