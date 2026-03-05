@@ -5,7 +5,7 @@ set -euo pipefail
 
 usage() {
   cat <<EOF
-Usage: $(basename "$0") <pr|issue> [OPTIONS] [NUMBER ...]
+Usage: $(basename "$0") <pr|issue|users> [OPTIONS] [NUMBER ...]
 
 Format GitHub PRs or issues for pasting into Slack.
 Copies rich text to clipboard — Cmd+V into Slack gives clickable links.
@@ -42,7 +42,7 @@ if ! gh repo view --json name >/dev/null 2>&1; then
 fi
 
 usage_hint() {
-  echo "Usage: $(basename "$0") <pr|issue> [OPTIONS] [NUMBER ...]" >&2
+  echo "Usage: $(basename "$0") <pr|issue|users> [OPTIONS] [NUMBER ...]" >&2
   echo "Run '$(basename "$0") --help' for more information." >&2
 }
 
@@ -57,7 +57,7 @@ subcommand="$1"
 shift
 
 case "$subcommand" in
-  pr|issue)
+  pr|issue|users)
     # Valid subcommand — continue
     ;;
   -h|--help)
@@ -70,6 +70,65 @@ case "$subcommand" in
     exit 1
     ;;
 esac
+
+# ── Users subcommand (short-circuit) ──────────────────────────────────
+
+if [ "$subcommand" = "users" ]; then
+  repo_slug=$(gh repo view --json owner,name --jq '.owner.login + "/" + .name')
+  repo_url="https://github.com/${repo_slug}"
+
+  users=$(gh api "repos/${repo_slug}/collaborators" --jq '.[].login' | sort)
+
+  html=""
+  slack_plain=""
+  terminal_plain=""
+
+  while IFS= read -r user; do
+    created_url="${repo_url}/issues/created_by/${user}"
+    assigned_url="${repo_url}/issues?q=assignee%3A${user}+is%3Aopen+"
+    prs_url="${repo_url}/pulls/${user}"
+
+    # HTML for Slack clipboard
+    line=":technologist: ${user}"
+    line+=" <a href=\"${created_url}\">created issues</a>"
+    line+=" <a href=\"${assigned_url}\">assigned issues</a>"
+    line+=" <a href=\"${prs_url}\">PRs</a>"
+    if [ -n "$html" ]; then html+="<br>"; fi
+    html+="$line"
+
+    # Plain text fallback for clipboard
+    plain_line=":technologist: ${user}  created issues  assigned issues  PRs"
+    if [ -n "$slack_plain" ]; then slack_plain+=$'\n'; fi
+    slack_plain+="$plain_line"
+
+    # Terminal with OSC 8 hyperlinks
+    osc_line=":technologist: ${user}"
+    osc_line+="  \e]8;;${created_url}\e\\created issues\e]8;;\e\\"
+    osc_line+="  \e]8;;${assigned_url}\e\\assigned issues\e]8;;\e\\"
+    osc_line+="  \e]8;;${prs_url}\e\\PRs\e]8;;\e\\"
+    if [ -n "$terminal_plain" ]; then terminal_plain+=$'\n'; fi
+    terminal_plain+="$osc_line"
+  done <<< "$users"
+
+  # Copy to clipboard
+  export CLIPBOARD_HTML="$html"
+  export CLIPBOARD_PLAIN="$slack_plain"
+  swift -e '
+import AppKit
+let html = ProcessInfo.processInfo.environment["CLIPBOARD_HTML"]!
+let plain = ProcessInfo.processInfo.environment["CLIPBOARD_PLAIN"]!
+let pb = NSPasteboard.general
+pb.clearContents()
+pb.setString(html, forType: .html)
+pb.setString(plain, forType: .string)
+'
+
+  # Terminal display
+  printf '%b\n' "$terminal_plain"
+  echo ""
+  echo "Copied to clipboard — Cmd+V into Slack for clickable links"
+  exit 0
+fi
 
 # ── Subcommand-specific configuration ────────────────────────────────
 
