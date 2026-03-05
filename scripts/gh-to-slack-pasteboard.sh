@@ -103,7 +103,8 @@ if [ "$subcommand" = "users" ]; then
     prs_url="${repo_url}/pulls/${user}"
 
     # HTML for Slack clipboard
-    line=":technologist: ${user}"
+    profile_url="https://github.com/${user}"
+    line=":technologist: <a href=\"${profile_url}\">${user}</a>"
     line+=" <a href=\"${created_url}\">created issues</a>"
     line+=" | <a href=\"${assigned_url}\">assigned issues</a>"
     line+=" | <a href=\"${prs_url}\">PRs</a>"
@@ -116,7 +117,7 @@ if [ "$subcommand" = "users" ]; then
     slack_plain+="$plain_line"
 
     # Terminal with OSC 8 hyperlinks (using printf with \033 escapes, matching pr/issue format)
-    osc_line=$(printf ':technologist: %s  \033]8;;%s\033\\created issues\033]8;;\033\\ | \033]8;;%s\033\\assigned issues\033]8;;\033\\ | \033]8;;%s\033\\PRs\033]8;;\033\\' "$user" "$created_url" "$assigned_url" "$prs_url")
+    osc_line=$(printf ':technologist: \033]8;;%s\033\\%s\033]8;;\033\\  \033]8;;%s\033\\created issues\033]8;;\033\\ | \033]8;;%s\033\\assigned issues\033]8;;\033\\ | \033]8;;%s\033\\PRs\033]8;;\033\\' "$profile_url" "$user" "$created_url" "$assigned_url" "$prs_url")
     if [ -n "$terminal_plain" ]; then terminal_plain+=$'\n'; fi
     terminal_plain+="$osc_line"
   done <<< "$users"
