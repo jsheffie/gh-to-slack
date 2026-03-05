@@ -141,6 +141,136 @@ pb.setString(plain, forType: .string)
   exit 0
 fi
 
+# ── Activity subcommand (short-circuit) ──────────────────────────────
+
+if [ "$subcommand" = "activity" ]; then
+  # Parse activity-specific args
+  limit=10
+  user_display=false
+
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -h|--help) usage ;;
+      --user-display) user_display=true ;;
+      --limit)
+        shift
+        if [ $# -eq 0 ]; then
+          echo "Error: --limit requires a number." >&2
+          exit 1
+        fi
+        if ! [[ "$1" =~ ^[1-9][0-9]*$ ]]; then
+          echo "Error: --limit must be a positive integer, got '$1'." >&2
+          exit 1
+        fi
+        limit="$1"
+        ;;
+      *)
+        echo "Error: activity does not accept '$1'. Only --user-display and --limit are supported." >&2
+        exit 1
+        ;;
+    esac
+    shift
+  done
+
+  # ── Shared jq definitions ──────────────────────────────────────────
+
+  JQ_TIMESTAMP='
+    (.updatedAt | sub("\\.[0-9]+Z$"; "Z") | strptime("%Y-%m-%dT%H:%M:%SZ") | mktime | . - 21600 | strftime("%b %d %I:%M%p")
+      | sub("(?<h>[0-9]+:[0-9]+)(?<p>AM|PM)"; "\(.h)\(.p | ascii_downcase)")
+    ) as $updated'
+
+  # ── Fetch issues ───────────────────────────────────────────────────
+
+  issue_json=$(gh issue list --limit "$limit" --state all --json "number,title,url,state,updatedAt,assignees")
+
+  JQ_ISSUE_EMOJI='
+    (
+      if .state == "CLOSED" then ":git--closed:"
+      else ":git--issue:"
+      end
+    ) as $emoji'
+
+  JQ_ISSUE_ICON='
+    (
+      if .state == "CLOSED" then "\u001b[31m●\u001b[0m"
+      else "\u001b[33m●\u001b[0m"
+      end
+    ) as $icon'
+
+  if [ "$user_display" = true ]; then
+    JQ_ISSUE_USER='(if (.assignees | length) > 0 then " @" + .assignees[0].login else "" end) as $user'
+  else
+    JQ_ISSUE_USER='"" as $user'
+  fi
+
+  issue_html=$(echo "$issue_json" | jq -r "[sort_by(.updatedAt) | reverse | .[] | ${JQ_ISSUE_EMOJI} | ${JQ_TIMESTAMP} | ${JQ_ISSUE_USER} | \"<code>\(\$updated)</code> \(\$emoji) \(.title)\(\$user) <a href=\\\"\(.url)\\\">#\(.number)</a>\"] | join(\"<br>\")")
+  issue_plain=$(echo "$issue_json" | jq -r "sort_by(.updatedAt) | reverse | .[] | ${JQ_ISSUE_EMOJI} | ${JQ_TIMESTAMP} | ${JQ_ISSUE_USER} | \"\`\(\$updated)\` \(\$emoji) \(.title)\(\$user) #\(.number)\"")
+  issue_terminal=$(echo "$issue_json" | jq -r "sort_by(.updatedAt) | reverse | .[] | ${JQ_ISSUE_ICON} | ${JQ_TIMESTAMP} | ${JQ_ISSUE_USER} | \"\(\$updated) \(\$icon) \(.title)\(\$user) \u001b]8;;\(.url)\u001b\\\\#\(.number)\u001b]8;;\u001b\\\\\"")
+
+  # ── Fetch PRs ──────────────────────────────────────────────────────
+
+  pr_json=$(gh pr list --limit "$limit" --state all --json "number,title,url,state,isDraft,reviewDecision,updatedAt,author")
+
+  JQ_PR_EMOJI='
+    (
+      if .state == "MERGED" then ":git--merged:"
+      elif .state == "CLOSED" then ":git--closed:"
+      elif .isDraft then ":git--draft:"
+      elif .reviewDecision == "APPROVED" then ":git--approved:"
+      elif .reviewDecision == "CHANGES_REQUESTED" then ":git--changes-required:"
+      else ":git--ready-for-review:"
+      end
+    ) as $emoji'
+
+  JQ_PR_ICON='
+    (
+      if .state == "MERGED" then "\u001b[35m●\u001b[0m"
+      elif .state == "CLOSED" then "\u001b[31m●\u001b[0m"
+      elif .isDraft then "\u001b[90m●\u001b[0m"
+      elif .reviewDecision == "APPROVED" then "\u001b[32m✓\u001b[0m"
+      elif .reviewDecision == "CHANGES_REQUESTED" then "\u001b[33m!\u001b[0m"
+      else "\u001b[33m●\u001b[0m"
+      end
+    ) as $icon'
+
+  if [ "$user_display" = true ]; then
+    JQ_PR_USER='(" @" + .author.login) as $user'
+  else
+    JQ_PR_USER='"" as $user'
+  fi
+
+  pr_html=$(echo "$pr_json" | jq -r "[sort_by(.updatedAt) | reverse | .[] | ${JQ_PR_EMOJI} | ${JQ_TIMESTAMP} | ${JQ_PR_USER} | \"<code>\(\$updated)</code> \(\$emoji) \(.title)\(\$user) <a href=\\\"\(.url)\\\">#\(.number)</a>\"] | join(\"<br>\")")
+  pr_plain=$(echo "$pr_json" | jq -r "sort_by(.updatedAt) | reverse | .[] | ${JQ_PR_EMOJI} | ${JQ_TIMESTAMP} | ${JQ_PR_USER} | \"\`\(\$updated)\` \(\$emoji) \(.title)\(\$user) #\(.number)\"")
+  pr_terminal=$(echo "$pr_json" | jq -r "sort_by(.updatedAt) | reverse | .[] | ${JQ_PR_ICON} | ${JQ_TIMESTAMP} | ${JQ_PR_USER} | \"\(\$updated) \(\$icon) \(.title)\(\$user) \u001b]8;;\(.url)\u001b\\\\#\(.number)\u001b]8;;\u001b\\\\\"")
+
+  # ── Assemble sections ──────────────────────────────────────────────
+
+  html=":git--issue: Issues<br>${issue_html}<br><br>:git--ready-for-review: PRs<br>${pr_html}"
+  slack_plain=":git--issue: Issues"$'\n'"${issue_plain}"$'\n'$'\n'":git--ready-for-review: PRs"$'\n'"${pr_plain}"
+  terminal_plain=":git--issue: Issues"$'\n'"${issue_terminal}"$'\n'$'\n'":git--ready-for-review: PRs"$'\n'"${pr_terminal}"
+
+  # ── Clipboard ──────────────────────────────────────────────────────
+
+  export CLIPBOARD_HTML="$html"
+  export CLIPBOARD_PLAIN="$slack_plain"
+  swift -e '
+import AppKit
+let html = ProcessInfo.processInfo.environment["CLIPBOARD_HTML"]!
+let plain = ProcessInfo.processInfo.environment["CLIPBOARD_PLAIN"]!
+let pb = NSPasteboard.general
+pb.clearContents()
+pb.setString(html, forType: .html)
+pb.setString(plain, forType: .string)
+'
+
+  # ── Terminal display ───────────────────────────────────────────────
+
+  printf '%s\n' "$terminal_plain"
+  echo ""
+  echo "Copied to clipboard — Cmd+V into Slack for clickable links"
+  exit 0
+fi
+
 # ── Subcommand-specific configuration ────────────────────────────────
 
 if [ "$subcommand" = "pr" ]; then
