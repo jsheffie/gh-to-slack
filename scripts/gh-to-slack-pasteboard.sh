@@ -185,13 +185,23 @@ fi
 
 show_all=false
 numbers=()
+limit=10
 
-for arg in "$@"; do
-  case "$arg" in
+while [ $# -gt 0 ]; do
+  case "$1" in
     -h|--help) usage ;;
     --all) show_all=true ;;
-    *) numbers+=("$arg") ;;
+    --limit)
+      shift
+      if [ $# -eq 0 ]; then
+        echo "Error: --limit requires a number." >&2
+        exit 1
+      fi
+      limit="$1"
+      ;;
+    *) numbers+=("$1") ;;
   esac
+  shift
 done
 
 # ── JSON fetching ────────────────────────────────────────────────────
@@ -213,13 +223,13 @@ if [ ${#numbers[@]} -gt 0 ]; then
 elif [ "$show_all" = true ]; then
   json=$(gh "$gh_cmd" list \
     "${gh_list_filter[@]}" \
-    --limit 10 \
+    --limit "$limit" \
     --state all \
     --json "$json_fields")
 else
   json=$(gh "$gh_cmd" list \
     "${gh_list_filter[@]}" \
-    --limit 10 \
+    --limit "$limit" \
     --state open \
     --json "$json_fields")
 fi
