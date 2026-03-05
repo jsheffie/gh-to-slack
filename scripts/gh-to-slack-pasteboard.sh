@@ -232,6 +232,22 @@ if [ ${#users[@]} -eq 1 ]; then
   fi
 fi
 
+# Generate header line for a user across all three output formats.
+# Sets: header_html, header_plain, header_terminal
+build_user_header() {
+  local user="$1"
+  local label
+  if [ "$subcommand" = "pr" ]; then
+    label="PRs"
+  else
+    label="Issues"
+  fi
+  local profile_url="https://github.com/${user}"
+  header_html=":technologist: ${label} for <a href=\"${profile_url}\">@${user}</a>"
+  header_plain=":technologist: ${label} for @${user}"
+  header_terminal=$(printf ':technologist: %s for \033]8;;%s\033\\@%s\033]8;;\033\\' "$label" "$profile_url" "$user")
+}
+
 # ── JSON fetching ────────────────────────────────────────────────────
 
 if [ ${#numbers[@]} -gt 0 ]; then
@@ -278,6 +294,13 @@ slack_plain=$(echo "$json" | jq -r "sort_by(.updatedAt) | reverse | .[] | ${JQ_S
 
 # Terminal output with ANSI colored icons and OSC 8 clickable links
 terminal_plain=$(echo "$json" | jq -r "sort_by(.updatedAt) | reverse | .[] | ${JQ_TERMINAL_ICON} | ${JQ_TIMESTAMP} | \"\(\$updated) \(\$icon) \(.title) \u001b]8;;\(.url)\u001b\\\\#\(.number)\u001b]8;;\u001b\\\\\"")
+
+if [ "$user_explicit" = true ] && [ ${#users[@]} -eq 1 ]; then
+  build_user_header "${users[0]}"
+  html="${header_html}<br>${html}"
+  slack_plain="${header_plain}"$'\n'"${slack_plain}"
+  terminal_plain="${header_terminal}"$'\n'"${terminal_plain}"
+fi
 
 # ── Clipboard ────────────────────────────────────────────────────────
 
