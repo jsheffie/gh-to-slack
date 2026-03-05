@@ -96,21 +96,18 @@ if [ "$subcommand" = "users" ]; then
     # HTML for Slack clipboard
     line=":technologist: ${user}"
     line+=" <a href=\"${created_url}\">created issues</a>"
-    line+=" <a href=\"${assigned_url}\">assigned issues</a>"
-    line+=" <a href=\"${prs_url}\">PRs</a>"
+    line+=" | <a href=\"${assigned_url}\">assigned issues</a>"
+    line+=" | <a href=\"${prs_url}\">PRs</a>"
     if [ -n "$html" ]; then html+="<br>"; fi
     html+="$line"
 
     # Plain text fallback for clipboard
-    plain_line=":technologist: ${user}  created issues  assigned issues  PRs"
+    plain_line=":technologist: ${user}  created issues | assigned issues | PRs"
     if [ -n "$slack_plain" ]; then slack_plain+=$'\n'; fi
     slack_plain+="$plain_line"
 
-    # Terminal with OSC 8 hyperlinks
-    osc_line=":technologist: ${user}"
-    osc_line+="  \e]8;;${created_url}\e\\created issues\e]8;;\e\\"
-    osc_line+="  \e]8;;${assigned_url}\e\\assigned issues\e]8;;\e\\"
-    osc_line+="  \e]8;;${prs_url}\e\\PRs\e]8;;\e\\"
+    # Terminal with OSC 8 hyperlinks (using printf with \033 escapes, matching pr/issue format)
+    osc_line=$(printf ':technologist: %s  \033]8;;%s\033\\created issues\033]8;;\033\\ | \033]8;;%s\033\\assigned issues\033]8;;\033\\ | \033]8;;%s\033\\PRs\033]8;;\033\\' "$user" "$created_url" "$assigned_url" "$prs_url")
     if [ -n "$terminal_plain" ]; then terminal_plain+=$'\n'; fi
     terminal_plain+="$osc_line"
   done <<< "$users"
@@ -129,7 +126,7 @@ pb.setString(plain, forType: .string)
 '
 
   # Terminal display
-  printf '%b\n' "$terminal_plain"
+  printf '%s\n' "$terminal_plain"
   echo ""
   echo "Copied to clipboard — Cmd+V into Slack for clickable links"
   exit 0
