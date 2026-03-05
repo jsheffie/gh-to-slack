@@ -4,6 +4,14 @@ macOS shell script that formats GitHub CLI (`gh`) output (PRs, issues, etc.) int
 
 ## Install
 
+### Homebrew (recommended)
+
+```bash
+brew install jsheffie/homebrew-tap/gh-to-slack
+```
+
+### Manual
+
 1. Create `~/bin` if it doesn't exist:
 
    ```bash
