@@ -186,6 +186,8 @@ fi
 show_all=false
 numbers=()
 limit=10
+users=()
+user_explicit=false
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -203,10 +205,32 @@ while [ $# -gt 0 ]; do
       fi
       limit="$1"
       ;;
+    --user)
+      shift
+      if [ $# -eq 0 ]; then
+        echo "Error: --user requires a username." >&2
+        exit 1
+      fi
+      users+=("$1")
+      user_explicit=true
+      ;;
     *) numbers+=("$1") ;;
   esac
   shift
 done
+
+if [ ${#users[@]} -gt 1 ] && [ ${#numbers[@]} -gt 0 ]; then
+  echo "Error: cannot combine multiple --user with specific numbers." >&2
+  exit 1
+fi
+
+if [ ${#users[@]} -eq 1 ]; then
+  if [ "$subcommand" = "pr" ]; then
+    gh_list_filter=(--author "${users[0]}")
+  else
+    gh_list_filter=(--assignee "${users[0]}")
+  fi
+fi
 
 # ── JSON fetching ────────────────────────────────────────────────────
 
