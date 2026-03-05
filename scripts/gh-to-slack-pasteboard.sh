@@ -13,6 +13,7 @@ Copies rich text to clipboard — Cmd+V into Slack gives clickable links.
 Subcommands:
   pr          List PRs authored by you.
   issue       List issues assigned to you.
+  users       List repository collaborators with links to issues and PRs.
 
 Options:
   --all       Show all items regardless of state (open, closed, merged, etc.)
@@ -30,6 +31,7 @@ Examples:
   $(basename "$0") issue                 # Open issues assigned to me
   $(basename "$0") issue --all           # All issues (open + closed)
   $(basename "$0") issue 42 57           # Specific issues by number
+  $(basename "$0") users                   # List collaborators with links
 EOF
   exit 0
 }
