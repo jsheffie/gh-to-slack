@@ -47,7 +47,7 @@ usage_hint() {
 }
 
 if [ $# -eq 0 ]; then
-  echo "Error: subcommand required (pr or issue)." >&2
+  echo "Error: subcommand required (pr, issue, or users)." >&2
   echo "" >&2
   usage_hint
   exit 1
@@ -78,6 +78,11 @@ if [ "$subcommand" = "users" ]; then
   repo_url="https://github.com/${repo_slug}"
 
   users=$(gh api "repos/${repo_slug}/collaborators" --jq '.[].login' | sort)
+
+  if [ -z "$users" ]; then
+    echo "No collaborators found." >&2
+    exit 0
+  fi
 
   html=""
   slack_plain=""
