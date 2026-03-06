@@ -421,7 +421,7 @@ fetch_json() {
     done
     json+="]"
   elif [ "$show_all" = true ]; then
-    json=$(gh "$gh_cmd" list "${gh_list_filter[@]}" --limit "$limit" --state all --json "$json_fields")
+    json=$(gh "$gh_cmd" list "${gh_list_filter[@]}" --limit 100 --state all --json "$json_fields")
   else
     json=$(gh "$gh_cmd" list "${gh_list_filter[@]}" --limit "$limit" --state open --json "$json_fields")
   fi
@@ -431,9 +431,9 @@ fetch_json() {
 # Requires: json, JQ_SLACK_EMOJI, JQ_TERMINAL_ICON, JQ_TIMESTAMP
 # Sets: html, slack_plain, terminal_plain
 format_output() {
-  html=$(echo "$json" | jq -r "[sort_by(.updatedAt) | reverse | .[] | ${JQ_SLACK_EMOJI} | ${JQ_TIMESTAMP} | (.title | gsub(\"<\";\"&lt;\") | gsub(\">\";\"&gt;\")) as \$safe_title | \"<code>\(\$updated)</code> \(\$emoji) \(\$safe_title) <a href=\\\"\(.url)\\\">#\(.number)</a>\"] | join(\"<br>\")")
-  slack_plain=$(echo "$json" | jq -r "sort_by(.updatedAt) | reverse | .[] | ${JQ_SLACK_EMOJI} | ${JQ_TIMESTAMP} | \"\`\(\$updated)\` \(\$emoji) \(.title) #\(.number)\"")
-  terminal_plain=$(echo "$json" | jq -r "sort_by(.updatedAt) | reverse | .[] | ${JQ_TERMINAL_ICON} | ${JQ_TIMESTAMP} | \"\(\$updated) \(\$icon) \(.title) \u001b]8;;\(.url)\u001b\\\\#\(.number)\u001b]8;;\u001b\\\\\"")
+  html=$(echo "$json" | jq -r "[sort_by(.updatedAt) | reverse | .[:${limit}] | .[] | ${JQ_SLACK_EMOJI} | ${JQ_TIMESTAMP} | (.title | gsub(\"<\";\"&lt;\") | gsub(\">\";\"&gt;\")) as \$safe_title | \"<code>\(\$updated)</code> \(\$emoji) \(\$safe_title) <a href=\\\"\(.url)\\\">#\(.number)</a>\"] | join(\"<br>\")")
+  slack_plain=$(echo "$json" | jq -r "sort_by(.updatedAt) | reverse | .[:${limit}] | .[] | ${JQ_SLACK_EMOJI} | ${JQ_TIMESTAMP} | \"\`\(\$updated)\` \(\$emoji) \(.title) #\(.number)\"")
+  terminal_plain=$(echo "$json" | jq -r "sort_by(.updatedAt) | reverse | .[:${limit}] | .[] | ${JQ_TERMINAL_ICON} | ${JQ_TIMESTAMP} | \"\(\$updated) \(\$icon) \(.title) \u001b]8;;\(.url)\u001b\\\\#\(.number)\u001b]8;;\u001b\\\\\"")
 }
 
 # ── Output generation ────────────────────────────────────────────────
