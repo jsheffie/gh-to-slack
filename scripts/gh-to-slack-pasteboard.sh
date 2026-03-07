@@ -3,7 +3,7 @@
 
 set -euo pipefail
 
-VERSION="1.0.1"
+VERSION="1.0.2"
 RELEASES_URL="https://github.com/jsheffie/gh-to-slack/releases"
 
 # ── Inline icon support ──────────────────────────────────────────────
@@ -135,8 +135,9 @@ case "$subcommand" in
     usage
     ;;
   --version)
-    echo "gh-to-slack-pasteboard ${VERSION}"
-    echo "${RELEASES_URL}"
+    readme_url="https://github.com/jsheffie/gh-to-slack"
+    printf '\ngh-to-slack-pasteboard %s\n\n' "${VERSION}"
+    printf 'Check \033]8;;%s\033\\gh-to-slack releases\033]8;;\033\\. If you are not on the latest version\nsee \033]8;;%s\033\\README\033]8;;\033\\ for install upgrade instructions\n\n' "${RELEASES_URL}" "${readme_url}"
     exit 0
     ;;
   *)
