@@ -6,6 +6,64 @@ set -euo pipefail
 VERSION="1.0.1"
 RELEASES_URL="https://github.com/jsheffie/gh-to-slack/releases"
 
+# ── Inline icon support ──────────────────────────────────────────────
+
+# Resolve icon directory
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ICON_DIR=""
+if [ -d "$(brew --prefix 2>/dev/null)/share/gh-to-slack/icons" ]; then
+  ICON_DIR="$(brew --prefix)/share/gh-to-slack/icons"
+elif [ -d "${SCRIPT_DIR}/../icons" ]; then
+  ICON_DIR="${SCRIPT_DIR}/../icons"
+fi
+
+# Determine icon mode: inline (images) or text (ANSI fallback)
+resolve_icon_mode() {
+  case "${TERMINAL_ICONS:-}" in
+    text)   echo "text" ;;
+    inline) echo "inline" ;;
+    *)
+      case "${TERM_PROGRAM:-}" in
+        iTerm.app|kitty|WezTerm) echo "inline" ;;
+        *) echo "text" ;;
+      esac
+      ;;
+  esac
+}
+
+ICON_MODE=$(resolve_icon_mode)
+
+# Fall back to text if icon directory not found
+if [ "$ICON_MODE" = "inline" ] && [ -z "$ICON_DIR" ]; then
+  ICON_MODE="text"
+fi
+
+# Render an icon as either an inline image or ANSI text.
+# Usage: render_icon <icon-name> <ansi-fallback>
+render_icon() {
+  local name="$1"
+  local fallback="$2"
+
+  if [ "$ICON_MODE" = "inline" ] && [ -f "${ICON_DIR}/${name}.png" ]; then
+    local b64
+    b64=$(base64 < "${ICON_DIR}/${name}.png")
+    printf '\033]1337;File=inline=1;width=2;height=1;preserveAspectRatio=1:%s\a' "$b64"
+  else
+    printf '%b' "$fallback"
+  fi
+}
+
+# Pre-compute icon strings for jq injection
+ICON_PR_MERGED=$(render_icon "pr-merged" "\033[35m●\033[0m")
+ICON_PR_CLOSED=$(render_icon "pr-closed" "\033[31m●\033[0m")
+ICON_PR_DRAFT=$(render_icon "pr-draft" "\033[90m●\033[0m")
+ICON_PR_APPROVED=$(render_icon "pr-approved" "\033[32m✓\033[0m")
+ICON_PR_CHANGES=$(render_icon "pr-changes-requested" "\033[33m!\033[0m")
+ICON_PR_READY=$(render_icon "pr-ready-for-review" "\033[33m●\033[0m")
+ICON_ISSUE_OPEN=$(render_icon "issue-open" "\033[33m●\033[0m")
+ICON_ISSUE_CLOSED=$(render_icon "issue-closed" "\033[31m●\033[0m")
+ICON_TECHNOLOGIST=$(render_icon "technologist" ":technologist:")
+
 usage() {
   cat <<EOF
 Usage: $(basename "$0") <pr|issue|activity|users> [OPTIONS] [NUMBER ...]
@@ -126,7 +184,7 @@ if [ "$subcommand" = "users" ]; then
     slack_plain+="$plain_line"
 
     # Terminal with OSC 8 hyperlinks (using printf with \033 escapes, matching pr/issue format)
-    osc_line=$(printf ':technologist: \033]8;;%s\033\\%s\033]8;;\033\\  \033]8;;%s\033\\created issues\033]8;;\033\\ | \033]8;;%s\033\\assigned issues\033]8;;\033\\ | \033]8;;%s\033\\PRs\033]8;;\033\\' "$profile_url" "$user" "$created_url" "$assigned_url" "$prs_url")
+    osc_line="${ICON_TECHNOLOGIST} "$(printf '\033]8;;%s\033\\%s\033]8;;\033\\  \033]8;;%s\033\\created issues\033]8;;\033\\ | \033]8;;%s\033\\assigned issues\033]8;;\033\\ | \033]8;;%s\033\\PRs\033]8;;\033\\' "$profile_url" "$user" "$created_url" "$assigned_url" "$prs_url")
     if [ -n "$terminal_plain" ]; then terminal_plain+=$'\n'; fi
     terminal_plain+="$osc_line"
   done <<< "$users"
@@ -202,8 +260,8 @@ if [ "$subcommand" = "activity" ]; then
 
   JQ_ISSUE_ICON='
     (
-      if .state == "CLOSED" then "\u001b[31m●\u001b[0m"
-      else "\u001b[33m●\u001b[0m"
+      if .state == "CLOSED" then $icon_issue_closed
+      else $icon_issue_open
       end
     ) as $icon'
 
@@ -219,7 +277,10 @@ if [ "$subcommand" = "activity" ]; then
 
   issue_html=$(echo "$issue_json" | jq -r "[sort_by(.updatedAt) | reverse | .[] | ${JQ_ISSUE_EMOJI} | ${JQ_TIMESTAMP} | ${JQ_ISSUE_USER_HTML} | (.title | gsub(\"<\";\"&lt;\") | gsub(\">\";\"&gt;\")) as \$safe_title | \"<code>\(\$updated)</code> \(\$emoji) \(\$safe_title)\(\$user) <a href=\\\"\(.url)\\\">#\(.number)</a>\"] | join(\"<br>\")")
   issue_plain=$(echo "$issue_json" | jq -r "sort_by(.updatedAt) | reverse | .[] | ${JQ_ISSUE_EMOJI} | ${JQ_TIMESTAMP} | ${JQ_ISSUE_USER_PLAIN} | \"\`\(\$updated)\` \(\$emoji) \(.title)\(\$user) #\(.number)\"")
-  issue_terminal=$(echo "$issue_json" | jq -r "sort_by(.updatedAt) | reverse | .[] | ${JQ_ISSUE_ICON} | ${JQ_TIMESTAMP} | ${JQ_ISSUE_USER_TERM} | \"\(\$updated) \(\$icon) \(.title)\(\$user) \u001b]8;;\(.url)\u001b\\\\#\(.number)\u001b]8;;\u001b\\\\\"")
+  issue_terminal=$(echo "$issue_json" | jq -r \
+    --arg icon_issue_open "$ICON_ISSUE_OPEN" \
+    --arg icon_issue_closed "$ICON_ISSUE_CLOSED" \
+    "sort_by(.updatedAt) | reverse | .[] | ${JQ_ISSUE_ICON} | ${JQ_TIMESTAMP} | ${JQ_ISSUE_USER_TERM} | \"\(\$updated) \(\$icon) \(.title)\(\$user) \u001b]8;;\(.url)\u001b\\\\#\(.number)\u001b]8;;\u001b\\\\\"")
 
   # ── Fetch PRs ──────────────────────────────────────────────────────
 
@@ -238,12 +299,12 @@ if [ "$subcommand" = "activity" ]; then
 
   JQ_PR_ICON='
     (
-      if .state == "MERGED" then "\u001b[35m●\u001b[0m"
-      elif .state == "CLOSED" then "\u001b[31m●\u001b[0m"
-      elif .isDraft then "\u001b[90m●\u001b[0m"
-      elif .reviewDecision == "APPROVED" then "\u001b[32m✓\u001b[0m"
-      elif .reviewDecision == "CHANGES_REQUESTED" then "\u001b[33m!\u001b[0m"
-      else "\u001b[33m●\u001b[0m"
+      if .state == "MERGED" then $icon_merged
+      elif .state == "CLOSED" then $icon_closed
+      elif .isDraft then $icon_draft
+      elif .reviewDecision == "APPROVED" then $icon_approved
+      elif .reviewDecision == "CHANGES_REQUESTED" then $icon_changes
+      else $icon_ready
       end
     ) as $icon'
 
@@ -259,13 +320,20 @@ if [ "$subcommand" = "activity" ]; then
 
   pr_html=$(echo "$pr_json" | jq -r "[sort_by(.updatedAt) | reverse | .[] | ${JQ_PR_EMOJI} | ${JQ_TIMESTAMP} | ${JQ_PR_USER_HTML} | (.title | gsub(\"<\";\"&lt;\") | gsub(\">\";\"&gt;\")) as \$safe_title | \"<code>\(\$updated)</code> \(\$emoji) \(\$safe_title)\(\$user) <a href=\\\"\(.url)\\\">#\(.number)</a>\"] | join(\"<br>\")")
   pr_plain=$(echo "$pr_json" | jq -r "sort_by(.updatedAt) | reverse | .[] | ${JQ_PR_EMOJI} | ${JQ_TIMESTAMP} | ${JQ_PR_USER_PLAIN} | \"\`\(\$updated)\` \(\$emoji) \(.title)\(\$user) #\(.number)\"")
-  pr_terminal=$(echo "$pr_json" | jq -r "sort_by(.updatedAt) | reverse | .[] | ${JQ_PR_ICON} | ${JQ_TIMESTAMP} | ${JQ_PR_USER_TERM} | \"\(\$updated) \(\$icon) \(.title)\(\$user) \u001b]8;;\(.url)\u001b\\\\#\(.number)\u001b]8;;\u001b\\\\\"")
+  pr_terminal=$(echo "$pr_json" | jq -r \
+    --arg icon_merged "$ICON_PR_MERGED" \
+    --arg icon_closed "$ICON_PR_CLOSED" \
+    --arg icon_draft "$ICON_PR_DRAFT" \
+    --arg icon_approved "$ICON_PR_APPROVED" \
+    --arg icon_changes "$ICON_PR_CHANGES" \
+    --arg icon_ready "$ICON_PR_READY" \
+    "sort_by(.updatedAt) | reverse | .[] | ${JQ_PR_ICON} | ${JQ_TIMESTAMP} | ${JQ_PR_USER_TERM} | \"\(\$updated) \(\$icon) \(.title)\(\$user) \u001b]8;;\(.url)\u001b\\\\#\(.number)\u001b]8;;\u001b\\\\\"")
 
   # ── Assemble sections ──────────────────────────────────────────────
 
   html=":git--issue: Issues<br>${issue_html}<br><br>:git--ready-for-review: PRs<br>${pr_html}"
   slack_plain=":git--issue: Issues"$'\n'"${issue_plain}"$'\n'$'\n'":git--ready-for-review: PRs"$'\n'"${pr_plain}"
-  terminal_plain=":git--issue: Issues"$'\n'"${issue_terminal}"$'\n'$'\n'":git--ready-for-review: PRs"$'\n'"${pr_terminal}"
+  terminal_plain="${ICON_ISSUE_OPEN} Issues"$'\n'"${issue_terminal}"$'\n'$'\n'"${ICON_PR_READY} PRs"$'\n'"${pr_terminal}"
 
   # ── Clipboard ──────────────────────────────────────────────────────
 
@@ -309,12 +377,12 @@ if [ "$subcommand" = "pr" ]; then
 
   JQ_TERMINAL_ICON='
     (
-      if .state == "MERGED" then "\u001b[35m●\u001b[0m"
-      elif .state == "CLOSED" then "\u001b[31m●\u001b[0m"
-      elif .isDraft then "\u001b[90m●\u001b[0m"
-      elif .reviewDecision == "APPROVED" then "\u001b[32m✓\u001b[0m"
-      elif .reviewDecision == "CHANGES_REQUESTED" then "\u001b[33m!\u001b[0m"
-      else "\u001b[33m●\u001b[0m"
+      if .state == "MERGED" then $icon_merged
+      elif .state == "CLOSED" then $icon_closed
+      elif .isDraft then $icon_draft
+      elif .reviewDecision == "APPROVED" then $icon_approved
+      elif .reviewDecision == "CHANGES_REQUESTED" then $icon_changes
+      else $icon_ready
       end
     ) as $icon'
 
@@ -332,8 +400,8 @@ else
 
   JQ_TERMINAL_ICON='
     (
-      if .state == "CLOSED" then "\u001b[31m●\u001b[0m"
-      else "\u001b[33m●\u001b[0m"
+      if .state == "CLOSED" then $icon_issue_closed
+      else $icon_issue_open
       end
     ) as $icon'
 fi
@@ -404,7 +472,7 @@ build_user_header() {
   local profile_url="https://github.com/${user}"
   header_html=":technologist: ${label} for <a href=\"${profile_url}\">@${user}</a>"
   header_plain=":technologist: ${label} for @${user}"
-  header_terminal=$(printf ':technologist: %s for \033]8;;%s\033\\@%s\033]8;;\033\\' "$label" "$profile_url" "$user")
+  header_terminal="${ICON_TECHNOLOGIST} "$(printf '%s for \033]8;;%s\033\\@%s\033]8;;\033\\' "$label" "$profile_url" "$user")
 }
 
 # Fetch JSON for the current gh_list_filter, numbers, show_all, and limit settings.
@@ -433,7 +501,16 @@ fetch_json() {
 format_output() {
   html=$(echo "$json" | jq -r "[sort_by(.updatedAt) | reverse | .[:${limit}] | .[] | ${JQ_SLACK_EMOJI} | ${JQ_TIMESTAMP} | (.title | gsub(\"<\";\"&lt;\") | gsub(\">\";\"&gt;\")) as \$safe_title | \"<code>\(\$updated)</code> \(\$emoji) \(\$safe_title) <a href=\\\"\(.url)\\\">#\(.number)</a>\"] | join(\"<br>\")")
   slack_plain=$(echo "$json" | jq -r "sort_by(.updatedAt) | reverse | .[:${limit}] | .[] | ${JQ_SLACK_EMOJI} | ${JQ_TIMESTAMP} | \"\`\(\$updated)\` \(\$emoji) \(.title) #\(.number)\"")
-  terminal_plain=$(echo "$json" | jq -r "sort_by(.updatedAt) | reverse | .[:${limit}] | .[] | ${JQ_TERMINAL_ICON} | ${JQ_TIMESTAMP} | \"\(\$updated) \(\$icon) \(.title) \u001b]8;;\(.url)\u001b\\\\#\(.number)\u001b]8;;\u001b\\\\\"")
+  terminal_plain=$(echo "$json" | jq -r \
+    --arg icon_merged "$ICON_PR_MERGED" \
+    --arg icon_closed "$ICON_PR_CLOSED" \
+    --arg icon_draft "$ICON_PR_DRAFT" \
+    --arg icon_approved "$ICON_PR_APPROVED" \
+    --arg icon_changes "$ICON_PR_CHANGES" \
+    --arg icon_ready "$ICON_PR_READY" \
+    --arg icon_issue_open "$ICON_ISSUE_OPEN" \
+    --arg icon_issue_closed "$ICON_ISSUE_CLOSED" \
+    "sort_by(.updatedAt) | reverse | .[:${limit}] | .[] | ${JQ_TERMINAL_ICON} | ${JQ_TIMESTAMP} | \"\(\$updated) \(\$icon) \(.title) \u001b]8;;\(.url)\u001b\\\\#\(.number)\u001b]8;;\u001b\\\\\"")
 }
 
 # ── Output generation ────────────────────────────────────────────────
