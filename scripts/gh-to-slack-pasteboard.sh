@@ -165,30 +165,47 @@ if [ "$subcommand" = "users" ]; then
   slack_plain=""
   terminal_plain=""
 
-  while IFS= read -r user; do
+  # Collect users into array and find max username length for column alignment
+  user_list=()
+  while IFS= read -r u; do
+    user_list+=("$u")
+  done <<< "$users"
+
+  max_name_len=0
+  for u in "${user_list[@]}"; do
+    if [ "${#u}" -gt "$max_name_len" ]; then
+      max_name_len="${#u}"
+    fi
+  done
+
+  for user in "${user_list[@]}"; do
     created_url="${repo_url}/issues/created_by/${user}"
     assigned_url="${repo_url}/issues?q=assignee%3A${user}+is%3Aopen+"
     prs_url="${repo_url}/pulls/${user}"
 
+    # Compute padding so all "created issues" links start at the same column
+    pad=$(( max_name_len - ${#user} ))
+    pad_str=$(printf '%*s' "$pad" '')
+
     # HTML for Slack clipboard
     profile_url="https://github.com/${user}"
-    line=":technologist: <a href=\"${profile_url}\">${user}</a>"
+    line=":technologist: <a href=\"${profile_url}\">${user}</a>${pad_str}"
     line+=" <a href=\"${created_url}\">created issues</a>"
     line+=" | <a href=\"${assigned_url}\">assigned issues</a>"
     line+=" | <a href=\"${prs_url}\">PRs</a>"
     if [ -n "$html" ]; then html+="<br>"; fi
     html+="$line"
 
-    # Plain text fallback for clipboard
-    plain_line=":technologist: ${user}  created issues | assigned issues | PRs"
+    # Plain text fallback for clipboard (padded for monospace display in Slack)
+    plain_line=":technologist: $(printf '%-*s' "$max_name_len" "$user")  created issues | assigned issues | PRs"
     if [ -n "$slack_plain" ]; then slack_plain+=$'\n'; fi
     slack_plain+="$plain_line"
 
-    # Terminal with OSC 8 hyperlinks (using printf with \033 escapes, matching pr/issue format)
-    osc_line="${ICON_TECHNOLOGIST} "$(printf '\033]8;;%s\033\\%s\033]8;;\033\\  \033]8;;%s\033\\created issues\033]8;;\033\\ | \033]8;;%s\033\\assigned issues\033]8;;\033\\ | \033]8;;%s\033\\PRs\033]8;;\033\\' "$profile_url" "$user" "$created_url" "$assigned_url" "$prs_url")
+    # Terminal with OSC 8 hyperlinks and padding after username
+    osc_line="${ICON_TECHNOLOGIST} "$(printf '\033]8;;%s\033\\%s\033]8;;\033\\%s  \033]8;;%s\033\\created issues\033]8;;\033\\ | \033]8;;%s\033\\assigned issues\033]8;;\033\\ | \033]8;;%s\033\\PRs\033]8;;\033\\' "$profile_url" "$user" "$pad_str" "$created_url" "$assigned_url" "$prs_url")
     if [ -n "$terminal_plain" ]; then terminal_plain+=$'\n'; fi
     terminal_plain+="$osc_line"
-  done <<< "$users"
+  done
 
   # Copy to clipboard
   export CLIPBOARD_HTML="$html"
