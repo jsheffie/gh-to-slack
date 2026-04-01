@@ -3,7 +3,7 @@
 
 set -euo pipefail
 
-VERSION="1.0.2"
+VERSION="1.0.3"
 RELEASES_URL="https://github.com/jsheffie/gh-to-slack/releases"
 
 # ── Inline icon support ──────────────────────────────────────────────
