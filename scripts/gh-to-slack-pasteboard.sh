@@ -3,7 +3,7 @@
 
 set -euo pipefail
 
-VERSION="1.0.5"
+VERSION="1.0.6"
 RELEASES_URL="https://github.com/jsheffie/gh-to-slack/releases"
 
 # ── Inline icon support ──────────────────────────────────────────────
@@ -510,6 +510,9 @@ fetch_json() {
     json=$(gh "$gh_cmd" list "${gh_list_filter[@]}" --limit 100 --state all --json "$json_fields")
   else
     json=$(gh "$gh_cmd" list "${gh_list_filter[@]}" --limit "$limit" --state open --json "$json_fields")
+    if [ "$subcommand" = "pr" ]; then
+      json=$(echo "$json" | jq '[.[] | select(.isDraft | not)]')
+    fi
   fi
 }
 
