@@ -1,58 +1,53 @@
 #!/usr/bin/env bash
 # Create branch-named symlinks for git directories matching a prefix.
-# Usage: gh-create-syms <prefix> [create|list|clean] [--strict]
+# Usage: gh-syms <prefix> [create|list|clean] [--no-strict-nums-only] [--verbose]
 
 set -euo pipefail
 
-VERSION="1.0.6"
+VERSION="1.0.7"
 RELEASES_URL="https://github.com/jsheffie/gh-to-slack/releases"
 README_URL="https://github.com/jsheffie/gh-to-slack"
 
 usage() {
   cat <<EOF
-Usage: $(basename "$0") <prefix> [create|list|clean] [--strict]
+Usage: $(basename "$0") <prefix> [create|list|clean] [--no-strict-nums-only] [--verbose]
 
 Create symlinks of the form <dirname>-<branch> for every real git directory
 in the current working directory whose name starts with <prefix>.
 
-Old symlinks pointing to those directories are removed first, so re-running
-after a branch switch keeps the workspace tidy.
+By default only directories named exactly <prefix> or <prefix><N> (where N is
+a positive integer) are processed — e.g. django, django2, django3 but not
+django-old. Pass --no-strict-nums-only to process all <prefix>* directories.
 
 Subcommands:
-  create    Create/refresh symlinks (default when no subcommand given).
+  (none)    Remove stale symlinks, create fresh ones, then list. (default)
+  create    Create/refresh symlinks only (no listing).
   list      List existing symlinks for <prefix> without making changes.
   clean     Remove all symlinks targeting <prefix>* directories.
 
 Options:
-  --strict    Only operate on directories named exactly <prefix> or
-              <prefix><N> where N is a positive integer
-              (e.g. django, django2, django3 — not django-old).
-  --version   Show version and exit.
-  -h, --help  Show this help message and exit.
+  --no-strict-nums-only   Also process directories like django-old, django_bak.
+  --verbose               Print each removal and creation (default: list only).
+  --version               Show version and exit.
+  -h, --help              Show this help message and exit.
 
 Examples:
   $(basename "$0") django
-      Finds django/, django2/, django3/, … in CWD.
-      Creates: django-feature-auth -> django
-               django2-main        -> django2
-               django4-main        -> django4
-
-  $(basename "$0") django list
-      Lists existing symlinks, e.g.:
+      Removes stale symlinks, creates fresh ones, then lists:
         django   -> django-feature-auth
         django2  -> django2-main
+
+  $(basename "$0") django list
+      Lists existing symlinks without making changes.
 
   $(basename "$0") django clean
       Removes all symlinks targeting django* directories.
 
-  $(basename "$0") django --strict
-      Only processes django, django2, django3, … (skips django-old, django_bak, etc.)
+  $(basename "$0") django --no-strict-nums-only
+      Also processes django-old, django_bak, etc.
 
-  $(basename "$0") django list --strict
-      Lists only symlinks for strictly-numbered directories.
-
-  $(basename "$0") django clean --strict
-      Removes only symlinks for strictly-numbered directories.
+  $(basename "$0") django --verbose
+      Shows each removal and creation before the final list.
 EOF
   exit 0
 }
@@ -66,7 +61,7 @@ fi
 case "$1" in
   -h|--help) usage ;;
   --version)
-    printf '\ngh-create-syms %s\n\n' "${VERSION}"
+    printf '\ngh-syms %s\n\n' "${VERSION}"
     printf 'Check \033]8;;%s\033\\gh-to-slack releases\033]8;;\033\\. If you are not on the latest version\nsee \033]8;;%s\033\\README\033]8;;\033\\ for install upgrade instructions\n\n' "${RELEASES_URL}" "${README_URL}"
     exit 0
     ;;
@@ -75,14 +70,16 @@ esac
 BASE="$1"
 shift
 
-SUBCMD="create"
-OPT_STRICT=0
+SUBCMD="default"
+OPT_STRICT=1
+OPT_VERBOSE=0
 
 for arg in "$@"; do
   case "$arg" in
-    create|list|clean) SUBCMD="$arg" ;;
-    --strict)          OPT_STRICT=1 ;;
-    -h|--help)         usage ;;
+    create|list|clean)     SUBCMD="$arg" ;;
+    --no-strict-nums-only) OPT_STRICT=0 ;;
+    --verbose)             OPT_VERBOSE=1 ;;
+    -h|--help)             usage ;;
     *) echo "Error: unknown argument '$arg'." >&2; exit 1 ;;
   esac
 done
@@ -98,14 +95,14 @@ dir_matches() {
   fi
 }
 
-# clean: remove all symlinks targeting <BASE>* directories
+# ── clean subcommand ───────────────────────────────────────────────────
 if [ "$SUBCMD" = "clean" ]; then
   found=0
   while IFS= read -r -d '' sym; do
     target=$(readlink "$sym")
     if dir_matches "$target"; then
       rm "$sym"
-      echo "Removed:  ${sym#./}"
+      [ "$OPT_VERBOSE" -eq 1 ] && echo "Removed:  ${sym#./}"
       found=1
     fi
   done < <(find . -maxdepth 1 -type l -print0)
@@ -113,12 +110,12 @@ if [ "$SUBCMD" = "clean" ]; then
   exit 0
 fi
 
-# list: show existing symlinks targeting ${BASE}* dirs, no changes
-if [ "$SUBCMD" = "list" ]; then
-  # First pass: collect matches and find longest target name
+# ── list helper (used by list subcommand and default run) ──────────────
+do_list() {
   declare -a list_syms list_targets
-  maxlen=0
+  local maxlen=0
   while IFS= read -r -d '' sym; do
+    local target
     target=$(readlink "$sym")
     if dir_matches "$target"; then
       list_syms+=("${sym#./}")
@@ -129,18 +126,21 @@ if [ "$SUBCMD" = "list" ]; then
 
   if [ ${#list_syms[@]} -eq 0 ]; then
     echo "No symlinks found for prefix '${BASE}'."
-    exit 0
+    return
   fi
 
-  # Second pass: print with padding = longest + 1
-  pad=$(( maxlen + 1 ))
+  local pad=$(( maxlen + 1 ))
   for i in "${!list_syms[@]}"; do
     printf "  %-${pad}s -> %s\n" "${list_targets[$i]}" "${list_syms[$i]}"
   done
+}
+
+if [ "$SUBCMD" = "list" ]; then
+  do_list
   exit 0
 fi
 
-# create: create/refresh symlinks
+# ── create / default: collect matching real directories ────────────────
 shopt -s nullglob
 dirs=()
 for entry in "${BASE}"*/; do
@@ -172,11 +172,16 @@ for dirname in "${dirs[@]}"; do
     target=$(readlink "$existing")
     if [ "$target" = "$dirname" ]; then
       rm "$existing"
-      echo "Removed:  ${existing#./}"
+      [ "$OPT_VERBOSE" -eq 1 ] && echo "Removed:  ${existing#./}"
     fi
   done < <(find . -maxdepth 1 -type l -print0)
 
   # Create new symlink
   ln -s "$dirname" "$symname"
-  echo "Created:  $symname -> $dirname"
+  [ "$OPT_VERBOSE" -eq 1 ] && echo "Created:  $symname -> $dirname"
 done
+
+# Default run also prints the listing; bare `create` subcommand does not.
+if [ "$SUBCMD" = "default" ]; then
+  do_list
+fi

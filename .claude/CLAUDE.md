@@ -10,68 +10,70 @@ macOS shell scripts that format GitHub CLI (`gh`) output (PRs, issues, etc.) int
 
 Scripts live in `scripts/`:
 
-**`gh-to-slack-pasteboard.sh`** — formats GitHub PRs/issues as rich text for Slack:
+**`gh-clippy.sh`** — formats GitHub PRs/issues as rich text for Slack:
 1. Calls `gh` CLI to fetch JSON data
 2. Uses `jq` to transform JSON into HTML (with `<a>` links) and plain text
 3. Uses an inline Swift snippet (`swift -e`) with `AppKit`/`NSPasteboard` to copy both `public.html` and plain string types to the macOS clipboard — Slack preserves hyperlinks from the HTML pasteboard type
 
-**`gh-create-syms.sh`** — creates branch-named symlinks for git repo directories:
+**`gh-syms.sh`** — creates branch-named symlinks for git repo directories:
 1. Finds real directories in CWD matching a given prefix (e.g. `django`, `django2`, `django3`)
 2. Reads each directory's current git branch
 3. Removes old symlinks targeting those directories (matched by `readlink` target)
 4. Creates symlinks of the form `<dirname>-<branch>` → `<dirname>`
+5. Lists the current symlinks
+
+Default run (no subcommand) does all three phases: remove → create → list.
 
 ## Running
 
-### gh-to-slack-pasteboard.sh
+### gh-clippy.sh
 
 ```bash
 # Open, ready-for-review PRs authored by you
-./scripts/gh-to-slack-pasteboard.sh pr
+./scripts/gh-clippy.sh pr
 
 # All PRs (merged, closed, draft, etc.)
-./scripts/gh-to-slack-pasteboard.sh pr --all
+./scripts/gh-clippy.sh pr --all
 
 # Specific PRs by number
-./scripts/gh-to-slack-pasteboard.sh pr 12595 12593
+./scripts/gh-clippy.sh pr 12595 12593
 
 # Open issues assigned to you
-./scripts/gh-to-slack-pasteboard.sh issue
+./scripts/gh-clippy.sh issue
 
 # All issues (open + closed)
-./scripts/gh-to-slack-pasteboard.sh issue --all
+./scripts/gh-clippy.sh issue --all
 
 # Specific issues by number
-./scripts/gh-to-slack-pasteboard.sh issue 42 57
+./scripts/gh-clippy.sh issue 42 57
 ```
 
-### gh-create-syms.sh
+### gh-syms.sh
 
 ```bash
-# Create/refresh symlinks for all django* directories
-./scripts/gh-create-syms.sh django
+# Remove stale symlinks, create fresh ones, list (default)
+./scripts/gh-syms.sh django
 
-# List existing symlinks
-./scripts/gh-create-syms.sh django list
+# Same with verbose removal/creation output
+./scripts/gh-syms.sh django --verbose
+
+# List existing symlinks only
+./scripts/gh-syms.sh django list
 
 # Remove all symlinks for django* directories
-./scripts/gh-create-syms.sh django clean
+./scripts/gh-syms.sh django clean
 
-# Only operate on django, django2, django3, … (skip django-old, etc.)
-./scripts/gh-create-syms.sh django --strict
-
-# Subcommands and --strict compose freely
-./scripts/gh-create-syms.sh django list --strict
-./scripts/gh-create-syms.sh django clean --strict
+# Also process django-old, django_bak, etc. (default is strict: django, django2, django3 only)
+./scripts/gh-syms.sh django --no-strict-nums-only
 ```
 
 ## Dependencies
 
-- macOS (uses `NSPasteboard` via Swift) — required for `gh-to-slack-pasteboard.sh` only
-- `gh` CLI (authenticated) — required for `gh-to-slack-pasteboard.sh` only
-- `jq` — required for `gh-to-slack-pasteboard.sh` only
-- Swift runtime (ships with Xcode / Command Line Tools) — required for `gh-to-slack-pasteboard.sh` only
-- `git` — required for `gh-create-syms.sh`
+- macOS (uses `NSPasteboard` via Swift) — required for `gh-clippy.sh` only
+- `gh` CLI (authenticated) — required for `gh-clippy.sh` only
+- `jq` — required for `gh-clippy.sh` only
+- Swift runtime (ships with Xcode / Command Line Tools) — required for `gh-clippy.sh` only
+- `git` — required for `gh-syms.sh`
 
 ## Conventions
 
@@ -82,8 +84,8 @@ Scripts live in `scripts/`:
 ## Versioning
 
 All scripts share the same repo release version. When updating the `VERSION` variable in any script, update it in **all** scripts at the same time:
-- `scripts/gh-to-slack-pasteboard.sh`
-- `scripts/gh-create-syms.sh`
+- `scripts/gh-clippy.sh`
+- `scripts/gh-syms.sh`
 
 ## GitHub CLI
 
