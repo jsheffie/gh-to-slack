@@ -1,6 +1,11 @@
 # gh-to-slack
 
-macOS shell script that formats GitHub CLI (`gh`) output (PRs, issues, etc.) into rich text and copies it to the clipboard for pasting into Slack with clickable links and custom emoji.
+macOS shell scripts that format GitHub CLI (`gh`) output (PRs, issues, etc.) into rich text and copy it to the clipboard for pasting into Slack with clickable links and custom emoji.
+
+## Scripts
+
+- **`gh-clippy`** — formats GitHub PRs/issues as rich text for Slack
+- **`gh-syms`** — creates branch-named symlinks for git repo directories
 
 ## Install
 
@@ -18,11 +23,14 @@ brew install jsheffie/tap/gh-to-slack
    mkdir -p ~/bin
    ```
 
-2. Download the script and make executable:
+2. Download the scripts and make executable:
 
    ```bash
-   curl -fsSL https://raw.githubusercontent.com/jsheffie/gh-to-slack/v1.0.1/scripts/gh-to-slack-pasteboard.sh \
-     -o ~/bin/gh-to-slack-pasteboard && chmod +x ~/bin/gh-to-slack-pasteboard
+   curl -fsSL https://raw.githubusercontent.com/jsheffie/gh-to-slack/v1.0.7/scripts/gh-clippy.sh \
+     -o ~/bin/gh-clippy && chmod +x ~/bin/gh-clippy
+
+   curl -fsSL https://raw.githubusercontent.com/jsheffie/gh-to-slack/v1.0.7/scripts/gh-syms.sh \
+     -o ~/bin/gh-syms && chmod +x ~/bin/gh-syms
    ```
 
 3. Add `~/bin` to your PATH (if not already there):
@@ -39,37 +47,54 @@ brew install jsheffie/tap/gh-to-slack
 
 ## Dependencies
 
-- macOS (uses `NSPasteboard` via Swift for clipboard access)
-- [`gh`](https://cli.github.com/) CLI (authenticated)
-- [`jq`](https://jqlang.github.io/jq/)
-- Swift runtime (ships with Xcode / Command Line Tools)
+- macOS (uses `NSPasteboard` via Swift for clipboard access) — `gh-clippy` only
+- [`gh`](https://cli.github.com/) CLI (authenticated) — `gh-clippy` only
+- [`jq`](https://jqlang.github.io/jq/) — `gh-clippy` only
+- Swift runtime (ships with Xcode / Command Line Tools) — `gh-clippy` only
+- `git` — `gh-syms` only
 
 ## Usage
 
+### gh-clippy
+
 List your recent PRs or issues formatted for Slack. Copies rich text to clipboard — Cmd+V into Slack gives clickable links.
 
-**Indivual Developer Focused:**
-This usage efaults to `@me` usage for status reporting
+**Individual Developer Focused:**
+Defaults to `@me` for status reporting.
 ```bash
-gh-to-slack-pasteboard pr                    # Open, ready-for-review PRs
-gh-to-slack-pasteboard pr --all              # All PRs
-gh-to-slack-pasteboard pr 12595 12593        # Specific PRs
-gh-to-slack-pasteboard pr --limit 20              # Up to 20 PRs
-gh-to-slack-pasteboard issue                 # Open issues assigned to me
-gh-to-slack-pasteboard issue --all           # All issues
-gh-to-slack-pasteboard issue 42 57           # Specific issues
-gh-to-slack-pasteboard issue --limit 5       # Show 5 issue
+gh-clippy pr                    # Open, ready-for-review PRs
+gh-clippy pr --all              # All PRs
+gh-clippy pr 12595 12593        # Specific PRs
+gh-clippy pr --limit 20         # Up to 20 PRs
+gh-clippy issue                 # Open issues assigned to me
+gh-clippy issue --all           # All issues
+gh-clippy issue 42 57           # Specific issues
+gh-clippy issue --limit 5       # Show 5 issues
 ```
 
-**Team/Management Focused** 
+**Team/Management Focused:**
 
 ```bash
-gh-to-slack-pasteboard activity                   # Recent issues & PRs (defautlts to 10 each)
-gh-to-slack-pasteboard activity --user-display    # With linked usernames
-gh-to-slack-pasteboard activity --limit 5         # 5 items per section
-gh-to-slack-pasteboard pr --user octocat          # Open PRs by octocat
-gh-to-slack-pasteboard issue --user bob --user ben # Issues for multiple users
-gh-to-slack-pasteboard users                      # List collaborators with links
+gh-clippy activity                    # Recent issues & PRs (defaults to 10 each)
+gh-clippy activity --user-display     # With linked usernames
+gh-clippy activity --limit 5          # 5 items per section
+gh-clippy pr --user octocat           # Open PRs by octocat
+gh-clippy issue --user bob --user ben # Issues for multiple users
+gh-clippy users                       # List collaborators with links
+```
+
+### gh-syms
+
+Create branch-named symlinks for git directories in the current working directory. Running without a subcommand removes stale symlinks, creates fresh ones, then lists the result.
+
+By default only directories named exactly `<prefix>` or `<prefix><N>` (e.g. `django`, `django2`, `django3`) are processed — not `django-old` or `django_bak`.
+
+```bash
+gh-syms django                        # Remove stale, create fresh, list
+gh-syms django --verbose              # Same, with removal/creation details
+gh-syms django list                   # List existing symlinks only
+gh-syms django clean                  # Remove all symlinks for django* dirs
+gh-syms django --no-strict-nums-only  # Also process django-old, django_bak, etc.
 ```
 
 ### Terminal Output
