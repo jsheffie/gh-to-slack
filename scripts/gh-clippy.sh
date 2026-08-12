@@ -543,8 +543,8 @@ fetch_json() {
 # Requires: json, JQ_SLACK_EMOJI, JQ_TERMINAL_ICON, JQ_TIMESTAMP
 # Sets: html, slack_plain, terminal_plain
 format_output() {
-  html=$(echo "$json" | jq -r "[sort_by(.updatedAt) | reverse | .[:${limit}] | .[] | ${JQ_SLACK_EMOJI} | ${JQ_TIMESTAMP} | (.title | gsub(\"<\";\"&lt;\") | gsub(\">\";\"&gt;\")) as \$safe_title | \"<code>\(\$updated)</code> \(\$emoji) \(\$safe_title) <a href=\\\"\(.url)\\\">#\(.number)</a>\"] | join(\"<br>\")")
-  slack_plain=$(echo "$json" | jq -r "sort_by(.updatedAt) | reverse | .[:${limit}] | .[] | ${JQ_SLACK_EMOJI} | ${JQ_TIMESTAMP} | \"\`\(\$updated)\` \(\$emoji) \(.title) #\(.number)\"")
+  html=$(echo "$json" | jq -r "[${JQ_ORDER} | ${JQ_SLICE} | .[] | ${JQ_SLACK_EMOJI} | ${JQ_TIMESTAMP} | (.title | gsub(\"<\";\"&lt;\") | gsub(\">\";\"&gt;\")) as \$safe_title | \"<code>\(\$updated)</code> \(\$emoji) \(\$safe_title) <a href=\\\"\(.url)\\\">#\(.number)</a>\"] | join(\"<br>\")")
+  slack_plain=$(echo "$json" | jq -r "${JQ_ORDER} | ${JQ_SLICE} | .[] | ${JQ_SLACK_EMOJI} | ${JQ_TIMESTAMP} | \"\`\(\$updated)\` \(\$emoji) \(.title) #\(.number)\"")
   terminal_plain=$(echo "$json" | jq -r \
     --arg icon_merged "$ICON_PR_MERGED" \
     --arg icon_closed "$ICON_PR_CLOSED" \
@@ -554,7 +554,7 @@ format_output() {
     --arg icon_ready "$ICON_PR_READY" \
     --arg icon_issue_open "$ICON_ISSUE_OPEN" \
     --arg icon_issue_closed "$ICON_ISSUE_CLOSED" \
-    "sort_by(.updatedAt) | reverse | .[:${limit}] | .[] | ${JQ_TERMINAL_ICON} | ${JQ_TIMESTAMP} | \"\(\$updated) \(\$icon) \(.title) \u001b]8;;\(.url)\u001b\\\\#\(.number)\u001b]8;;\u001b\\\\\"")
+    "${JQ_ORDER} | ${JQ_SLICE} | .[] | ${JQ_TERMINAL_ICON} | ${JQ_TIMESTAMP} | \"\(\$updated) \(\$icon) \(.title) \u001b]8;;\(.url)\u001b\\\\#\(.number)\u001b]8;;\u001b\\\\\"")
 }
 
 # Format JSON into an HTML table (Link | Status | Title) for MS Teams.
@@ -562,14 +562,21 @@ format_output() {
 # Sets: teams_html, teams_plain
 format_teams_output() {
   local rows_html rows_plain
-  rows_html=$(echo "$json" | jq -r "sort_by(.updatedAt) | reverse | .[:${limit}] | .[] | ${JQ_TEAMS_STATUS} | (.title | gsub(\"<\";\"&lt;\") | gsub(\">\";\"&gt;\")) as \$safe_title | \"<tr><td><a href=\\\"\(.url)\\\">#\(.number)</a></td><td>\(\$status)</td><td>\(\$safe_title)</td></tr>\"" | tr -d '\n')
+  rows_html=$(echo "$json" | jq -r "${JQ_ORDER} | ${JQ_SLICE} | .[] | ${JQ_TEAMS_STATUS} | (.title | gsub(\"<\";\"&lt;\") | gsub(\">\";\"&gt;\")) as \$safe_title | \"<tr><td><a href=\\\"\(.url)\\\">#\(.number)</a></td><td>\(\$status)</td><td>\(\$safe_title)</td></tr>\"" | tr -d '\n')
   teams_html="<table border=\"1\" cellpadding=\"4\" cellspacing=\"0\"><tr><th>Link</th><th>Status</th><th>Title</th></tr>${rows_html}</table>"
 
-  rows_plain=$(echo "$json" | jq -r "sort_by(.updatedAt) | reverse | .[:${limit}] | .[] | ${JQ_TEAMS_STATUS} | \"#\(.number) \(.url)\t\(\$status)\t\(.title)\"")
+  rows_plain=$(echo "$json" | jq -r "${JQ_ORDER} | ${JQ_SLICE} | .[] | ${JQ_TEAMS_STATUS} | \"#\(.number) \(.url)\t\(\$status)\t\(.title)\"")
   teams_plain=$'Link\tStatus\tTitle\n'"${rows_plain}"
 }
 
 # ── Output generation ────────────────────────────────────────────────
+
+# ── Ordering and truncation ──────────────────────────────────────────
+# List mode sorts newest-first and truncates to --limit. Explicit items
+# (numbers or repo specs) keep argument order and are never truncated;
+# Task 3 flips these.
+JQ_ORDER='sort_by(.updatedAt) | reverse'
+JQ_SLICE=".[:${limit}]"
 
 JQ_TIMESTAMP='
   (.updatedAt | sub("\\.[0-9]+Z$"; "Z") | strptime("%Y-%m-%dT%H:%M:%SZ") | mktime | . - 21600 | strftime("%b %d %I:%M%p")
