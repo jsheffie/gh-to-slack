@@ -98,6 +98,8 @@ Arguments:
               django:pr:100. The repo dir resolves under ~/workspace
               (override with GH_CLIPPY_WORKSPACE). Specs and numbers may be
               mixed; PRs and issues may be mixed. Cannot combine with --user.
+              SPEC works from any directory; bare NUMBER requires the
+              current directory to be a GitHub repo.
 
 Examples:
   $(basename "$0") pr                    # Open, ready-for-review PRs
@@ -115,7 +117,7 @@ Examples:
   $(basename "$0") activity --limit 5      # 5 items per section
   $(basename "$0") pr --teams              # Rich-text table for MS Teams
   $(basename "$0") pr django:pr:100                  # PR from another repo
-  $(basename "$0") pr django:pr:100 django:issue:99  # Mixed, in listed order
+  $(basename "$0") pr django:pr:100 myrepo:issue:42   # Mixed, in listed order
 EOF
   exit 0
 }
@@ -464,6 +466,8 @@ JQ_TEAMS_STATUS='
 parse_spec() {
   local arg="$1"
 
+  spec_dir=""; spec_type=""; spec_num=""
+
   case "$arg" in
     *:*) ;;
     *) return 1 ;;
@@ -603,15 +607,21 @@ fetch_item() {
       fields="$ISSUE_JSON_FIELDS"
     fi
 
-    local item
-    if ! item=$(cd "$dir" && gh "$spec_type" view "$spec_num" --json "$fields" 2>/dev/null); then
-      if ! (cd "$dir" && gh repo view --json name >/dev/null 2>&1); then
+    local item gh_err_file
+    gh_err_file=$(mktemp)
+    if ! item=$(cd "$dir" && gh "$spec_type" view "$spec_num" --json "$fields" 2>"$gh_err_file"); then
+      if ! git -C "$dir" rev-parse --git-dir >/dev/null 2>&1; then
         echo "Error: not a GitHub repository: $dir" >&2
       else
         echo "Error: could not fetch ${spec_type} #${spec_num} in ${dir}" >&2
+        if [ -s "$gh_err_file" ]; then
+          cat "$gh_err_file" >&2
+        fi
       fi
+      rm -f "$gh_err_file"
       exit 1
     fi
+    rm -f "$gh_err_file"
 
     echo "$item" | jq --arg kind "$spec_type" '. + {kind: $kind}'
   else

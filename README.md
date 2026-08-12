@@ -78,7 +78,9 @@ Items can be named as `<repodir>:<pr|issue>:<number>` to pull from another
 repository. The repo directory resolves under `~/workspace` — set
 `GH_CLIPPY_WORKSPACE` to use a different root. Explicitly named items print in
 the order given and ignore `--limit`, and PRs and issues can be mixed in one
-list.
+list. These fully-qualified specs work from any directory, even one that
+isn't a git repo at all; bare numbers and list mode still require the
+current directory to be a GitHub repo.
 
 Output is no longer re-sorted: `pr` and `issue` list in the order the GitHub CLI
 returns, and named items list in the order you passed them. (`activity` still
