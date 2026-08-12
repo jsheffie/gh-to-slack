@@ -113,11 +113,6 @@ EOF
   exit 0
 }
 
-if ! gh repo view --json name >/dev/null 2>&1; then
-  echo "Error: not in a GitHub repository. Run this from inside a repo." >&2
-  exit 1
-fi
-
 usage_hint() {
   echo "Usage: $(basename "$0") <pr|issue|activity|users> [OPTIONS] [NUMBER ...]" >&2
   echo "Run '$(basename "$0") --help' for more information." >&2
@@ -525,6 +520,26 @@ done
 
 if [ ${#users[@]} -gt 1 ] && [ ${#numbers[@]} -gt 0 ]; then
   echo "Error: cannot combine multiple --user with specific numbers." >&2
+  exit 1
+fi
+
+# ── CWD repo guard ───────────────────────────────────────────────────
+# Only bare numbers and list mode read the current directory's repo;
+# fully-qualified specs do not, so `gh-clippy pr django:pr:1` works from
+# anywhere, including ~/workspace itself.
+needs_cwd_repo=true
+if [ ${#numbers[@]} -gt 0 ]; then
+  needs_cwd_repo=false
+  for arg in "${numbers[@]}"; do
+    if ! parse_spec "$arg"; then
+      needs_cwd_repo=true
+      break
+    fi
+  done
+fi
+
+if [ "$needs_cwd_repo" = true ] && ! gh repo view --json name >/dev/null 2>&1; then
+  echo "Error: not in a GitHub repository. Run this from inside a repo." >&2
   exit 1
 fi
 
