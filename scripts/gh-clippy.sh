@@ -6,6 +6,9 @@ set -euo pipefail
 VERSION="1.0.9"
 RELEASES_URL="https://github.com/jsheffie/gh-to-slack/releases"
 
+# Root that `<repodir>:<type>:<number>` arguments resolve under.
+WORKSPACE_ROOT="${GH_CLIPPY_WORKSPACE:-$HOME/workspace}"
+
 # ── Inline icon support ──────────────────────────────────────────────
 
 # Resolve icon directory
@@ -452,6 +455,30 @@ JQ_TEAMS_STATUS='
     end
   ) as $status'
 
+# Validate a `<repodir>:<pr|issue>:<number>` argument.
+# Returns 1 if the argument contains no colon (i.e. it is a bare number).
+# Exits 1 if it contains a colon but is malformed.
+# On success sets: spec_dir, spec_type, spec_num
+parse_spec() {
+  local arg="$1"
+
+  case "$arg" in
+    *:*) ;;
+    *) return 1 ;;
+  esac
+
+  if ! [[ "$arg" =~ ^[^:/]+:(pr|issue):[0-9]+$ ]]; then
+    echo "Error: invalid item spec '$arg'." >&2
+    echo "Expected <repodir>:<pr|issue>:<number>, e.g. django:pr:100" >&2
+    exit 1
+  fi
+
+  spec_dir="${arg%%:*}"
+  spec_num="${arg##*:}"
+  local middle="${arg#*:}"
+  spec_type="${middle%%:*}"
+}
+
 # ── Arg parsing ──────────────────────────────────────────────────────
 
 show_all=false
@@ -487,7 +514,11 @@ while [ $# -gt 0 ]; do
       users+=("$1")
       user_explicit=true
       ;;
-    *) numbers+=("$1") ;;
+    *)
+      # Validates and exits on a malformed spec; bare numbers pass through.
+      if parse_spec "$1"; then :; fi
+      numbers+=("$1")
+      ;;
   esac
   shift
 done
@@ -523,20 +554,55 @@ build_user_header() {
   header_terminal="${ICON_TECHNOLOGIST} "$(printf '%s for \033]8;;%s\033\\@%s\033]8;;\033\\' "$label" "$profile_url" "$user")
 }
 
+# Echo one kind-tagged JSON object for a bare number or a repo spec.
+fetch_item() {
+  local arg="$1"
+
+  if parse_spec "$arg"; then
+    local dir="${WORKSPACE_ROOT}/${spec_dir}"
+    if [ ! -d "$dir" ]; then
+      echo "Error: no such repo directory: $dir" >&2
+      exit 1
+    fi
+
+    local fields
+    if [ "$spec_type" = "pr" ]; then
+      fields="$PR_JSON_FIELDS"
+    else
+      fields="$ISSUE_JSON_FIELDS"
+    fi
+
+    local item
+    if ! item=$(cd "$dir" && gh "$spec_type" view "$spec_num" --json "$fields" 2>/dev/null); then
+      if ! (cd "$dir" && gh repo view --json name >/dev/null 2>&1); then
+        echo "Error: not a GitHub repository: $dir" >&2
+      else
+        echo "Error: could not fetch ${spec_type} #${spec_num} in ${dir}" >&2
+      fi
+      exit 1
+    fi
+
+    echo "$item" | jq --arg kind "$spec_type" '. + {kind: $kind}'
+  else
+    # Bare number — current directory's repo, subcommand's type.
+    gh "$gh_cmd" view "$arg" --json "$json_fields" \
+      | jq --arg kind "$subcommand" '. + {kind: $kind}'
+  fi
+}
+
 # Fetch JSON for the current gh_list_filter, numbers, show_all, and limit settings.
 # Sets: json
 fetch_json() {
   if [ ${#numbers[@]} -gt 0 ]; then
     json="["
     local first=true
-    for num in "${numbers[@]}"; do
+    for arg in "${numbers[@]}"; do
       local item_json
-      item_json=$(gh "$gh_cmd" view "$num" --json "$json_fields")
+      item_json=$(fetch_item "$arg")
       if [ "$first" = true ]; then first=false; else json+=","; fi
       json+="$item_json"
     done
     json+="]"
-    json=$(echo "$json" | jq --arg kind "$subcommand" '[.[] | . + {kind: $kind}]')
   elif [ "$show_all" = true ]; then
     json=$(gh "$gh_cmd" list "${gh_list_filter[@]}" --limit 100 --state all --json "$json_fields" \
       | jq --arg kind "$subcommand" '[.[] | . + {kind: $kind}]')
