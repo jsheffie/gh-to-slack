@@ -3,7 +3,7 @@
 
 set -euo pipefail
 
-VERSION="1.0.8"
+VERSION="1.0.9"
 RELEASES_URL="https://github.com/jsheffie/gh-to-slack/releases"
 
 # ── Inline icon support ──────────────────────────────────────────────
@@ -82,6 +82,8 @@ Options:
   --limit N   Max items per user (default: 10).
   --all       Show all items regardless of state (open, closed, merged, etc.)
               Default shows only open items.
+  --teams     Output a rich-text table (Status | Title | Link) for pasting
+              into MS Teams, instead of Slack rich text. (pr/issue only)
   --version   Show version and exit.
   -h, --help  Show this help message and exit.
 
@@ -103,6 +105,7 @@ Examples:
   $(basename "$0") activity                # Recent issues & PRs
   $(basename "$0") activity --user-display # With usernames shown
   $(basename "$0") activity --limit 5      # 5 items per section
+  $(basename "$0") pr --teams              # Rich-text table for MS Teams
 EOF
   exit 0
 }
@@ -404,6 +407,17 @@ if [ "$subcommand" = "pr" ]; then
       end
     ) as $icon'
 
+  JQ_TEAMS_STATUS='
+    (
+      if .state == "MERGED" then "🟣 Merged"
+      elif .state == "CLOSED" then "🔴 Closed"
+      elif .isDraft then "⚪ Draft"
+      elif .reviewDecision == "APPROVED" then "✅ Approved"
+      elif .reviewDecision == "CHANGES_REQUESTED" then "❗ Changes requested"
+      else "🟢 Ready"
+      end
+    ) as $status'
+
 else
   gh_cmd="issue"
   gh_list_filter=(--assignee @me)
@@ -422,6 +436,13 @@ else
       else $icon_issue_open
       end
     ) as $icon'
+
+  JQ_TEAMS_STATUS='
+    (
+      if .state == "CLOSED" then "🔴 Closed"
+      else "🟢 Open"
+      end
+    ) as $status'
 fi
 
 # ── Arg parsing ──────────────────────────────────────────────────────
@@ -431,11 +452,13 @@ numbers=()
 limit=10
 users=()
 user_explicit=false
+teams=false
 
 while [ $# -gt 0 ]; do
   case "$1" in
     -h|--help) usage ;;
     --all) show_all=true ;;
+    --teams) teams=true ;;
     --limit)
       shift
       if [ $# -eq 0 ]; then
@@ -534,12 +557,61 @@ format_output() {
     "sort_by(.updatedAt) | reverse | .[:${limit}] | .[] | ${JQ_TERMINAL_ICON} | ${JQ_TIMESTAMP} | \"\(\$updated) \(\$icon) \(.title) \u001b]8;;\(.url)\u001b\\\\#\(.number)\u001b]8;;\u001b\\\\\"")
 }
 
+# Format JSON into an HTML table (Link | Status | Title) for MS Teams.
+# Requires: json, JQ_TEAMS_STATUS
+# Sets: teams_html, teams_plain
+format_teams_output() {
+  local rows_html rows_plain
+  rows_html=$(echo "$json" | jq -r "sort_by(.updatedAt) | reverse | .[:${limit}] | .[] | ${JQ_TEAMS_STATUS} | (.title | gsub(\"<\";\"&lt;\") | gsub(\">\";\"&gt;\")) as \$safe_title | \"<tr><td><a href=\\\"\(.url)\\\">#\(.number)</a></td><td>\(\$status)</td><td>\(\$safe_title)</td></tr>\"" | tr -d '\n')
+  teams_html="<table border=\"1\" cellpadding=\"4\" cellspacing=\"0\"><tr><th>Link</th><th>Status</th><th>Title</th></tr>${rows_html}</table>"
+
+  rows_plain=$(echo "$json" | jq -r "sort_by(.updatedAt) | reverse | .[:${limit}] | .[] | ${JQ_TEAMS_STATUS} | \"#\(.number) \(.url)\t\(\$status)\t\(.title)\"")
+  teams_plain=$'Link\tStatus\tTitle\n'"${rows_plain}"
+}
+
 # ── Output generation ────────────────────────────────────────────────
 
 JQ_TIMESTAMP='
   (.updatedAt | sub("\\.[0-9]+Z$"; "Z") | strptime("%Y-%m-%dT%H:%M:%SZ") | mktime | . - 21600 | strftime("%b %d %I:%M%p")
     | sub("(?<h>[0-9]+:[0-9]+)(?<p>AM|PM)"; "\(.h)\(.p | ascii_downcase)")
   ) as $updated'
+
+# ── Teams table (short-circuit) ───────────────────────────────────────
+
+if [ "$teams" = true ]; then
+  if [ "$user_explicit" = true ] && [ ${#users[@]} -gt 1 ]; then
+    echo "Error: --teams does not support multiple --user." >&2
+    exit 1
+  fi
+
+  if [ "$user_explicit" = true ]; then
+    if [ "$subcommand" = "pr" ]; then
+      gh_list_filter=(--author "${users[0]}")
+    else
+      gh_list_filter=(--assignee "${users[0]}")
+    fi
+  fi
+
+  fetch_json
+  format_teams_output
+
+  export CLIPBOARD_HTML="$teams_html"
+  export CLIPBOARD_PLAIN="$teams_plain"
+  swift -e '
+import AppKit
+let html = ProcessInfo.processInfo.environment["CLIPBOARD_HTML"]!
+let plain = ProcessInfo.processInfo.environment["CLIPBOARD_PLAIN"]!
+let pb = NSPasteboard.general
+pb.clearContents()
+pb.setString(html, forType: .html)
+pb.setString(plain, forType: .string)
+'
+
+  printf '%s\n' "$teams_plain"
+  echo ""
+  echo "Copied to clipboard — paste into MS Teams for a formatted table"
+  exit 0
+fi
 
 if [ "$user_explicit" = true ] && [ ${#users[@]} -gt 0 ]; then
   # ── Per-user loop ───────────────────────────────────────────────────
