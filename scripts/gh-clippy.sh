@@ -582,11 +582,15 @@ format_teams_output() {
 # ── Output generation ────────────────────────────────────────────────
 
 # ── Ordering and truncation ──────────────────────────────────────────
-# List mode sorts newest-first and truncates to --limit. Explicit items
-# (numbers or repo specs) keep argument order and are never truncated;
-# Task 3 flips these.
-JQ_ORDER='sort_by(.updatedAt) | reverse'
-JQ_SLICE=".[:${limit}]"
+# Order is never rewritten: explicitly named items follow the order given
+# on the command line, and list mode follows the order `gh` returns.
+# Explicit items are also never truncated — naming 11 items must print 11.
+JQ_ORDER='.'
+if [ ${#numbers[@]} -gt 0 ]; then
+  JQ_SLICE='.'
+else
+  JQ_SLICE=".[:${limit}]"
+fi
 
 JQ_TIMESTAMP='
   (.updatedAt | sub("\\.[0-9]+Z$"; "Z") | strptime("%Y-%m-%dT%H:%M:%SZ") | mktime | . - 21600 | strftime("%b %d %I:%M%p")
