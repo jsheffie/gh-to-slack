@@ -3,7 +3,7 @@
 
 set -euo pipefail
 
-VERSION="1.0.9"
+VERSION="1.0.10"
 RELEASES_URL="https://github.com/jsheffie/gh-to-slack/releases"
 
 # Root that `<repodir>:<type>:<number>` arguments resolve under.
@@ -69,7 +69,7 @@ ICON_TECHNOLOGIST=$(render_icon "technologist" ":technologist:")
 
 usage() {
   cat <<EOF
-Usage: $(basename "$0") <pr|issue|activity|users> [OPTIONS] [NUMBER ...]
+Usage: $(basename "$0") <pr|issue|activity|users> [OPTIONS] [NUMBER|SPEC ...]
 
 Format GitHub PRs or issues for pasting into Slack.
 Copies rich text to clipboard — Cmd+V into Slack gives clickable links.
@@ -91,8 +91,13 @@ Options:
   -h, --help  Show this help message and exit.
 
 Arguments:
-  NUMBER      One or more PR/issue numbers to show (e.g. 12595 12593).
-              When specified, --all is ignored.
+  NUMBER      One or more PR/issue numbers in the current repo (e.g. 12595).
+              When specified, --all and --limit are ignored and items print
+              in the order listed.
+  SPEC        An item in another repo: <repodir>:<pr|issue>:<number>, e.g.
+              django:pr:100. The repo dir resolves under ~/workspace
+              (override with GH_CLIPPY_WORKSPACE). Specs and numbers may be
+              mixed; PRs and issues may be mixed. Cannot combine with --user.
 
 Examples:
   $(basename "$0") pr                    # Open, ready-for-review PRs
@@ -109,12 +114,14 @@ Examples:
   $(basename "$0") activity --user-display # With usernames shown
   $(basename "$0") activity --limit 5      # 5 items per section
   $(basename "$0") pr --teams              # Rich-text table for MS Teams
+  $(basename "$0") pr django:pr:100                  # PR from another repo
+  $(basename "$0") pr django:pr:100 django:issue:99  # Mixed, in listed order
 EOF
   exit 0
 }
 
 usage_hint() {
-  echo "Usage: $(basename "$0") <pr|issue|activity|users> [OPTIONS] [NUMBER ...]" >&2
+  echo "Usage: $(basename "$0") <pr|issue|activity|users> [OPTIONS] [NUMBER|SPEC ...]" >&2
   echo "Run '$(basename "$0") --help' for more information." >&2
 }
 

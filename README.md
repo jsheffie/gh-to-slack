@@ -70,7 +70,19 @@ gh-clippy issue                 # Open issues assigned to me
 gh-clippy issue --all           # All issues
 gh-clippy issue 42 57           # Specific issues
 gh-clippy issue --limit 5       # Show 5 issues
+gh-clippy pr django:pr:100              # PR 100 in ~/workspace/django
+gh-clippy pr django:pr:100 api:issue:99 # Mixed repos and types, listed order
 ```
+
+Items can be named as `<repodir>:<pr|issue>:<number>` to pull from another
+repository. The repo directory resolves under `~/workspace` — set
+`GH_CLIPPY_WORKSPACE` to use a different root. Explicitly named items print in
+the order given and ignore `--limit`, and PRs and issues can be mixed in one
+list.
+
+Output is no longer re-sorted: `pr` and `issue` list in the order the GitHub CLI
+returns, and named items list in the order you passed them. (`activity` still
+sorts newest-first.)
 
 **Team/Management Focused:**
 
