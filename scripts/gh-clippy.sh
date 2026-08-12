@@ -378,72 +378,79 @@ pb.setString(plain, forType: .string)
   exit 0
 fi
 
+# ── Field sets per item kind ─────────────────────────────────────────
+# `gh issue view --json isDraft` is an error, so PRs and issues must be
+# fetched with different field sets and then tagged with `kind`.
+PR_JSON_FIELDS="number,title,url,state,isDraft,reviewDecision,updatedAt"
+ISSUE_JSON_FIELDS="number,title,url,state,updatedAt"
+
 # ── Subcommand-specific configuration ────────────────────────────────
+# Applies to list mode and to bare numeric arguments.
 
 if [ "$subcommand" = "pr" ]; then
   gh_cmd="pr"
   gh_list_filter=(--author @me)
-  json_fields="number,title,url,state,isDraft,reviewDecision,updatedAt"
-
-  JQ_SLACK_EMOJI='
-    (
-      if .state == "MERGED" then ":git--merged:"
-      elif .state == "CLOSED" then ":git--closed:"
-      elif .isDraft then ":git--draft:"
-      elif .reviewDecision == "APPROVED" then ":git--approved:"
-      elif .reviewDecision == "CHANGES_REQUESTED" then ":git--changes-required:"
-      else ":git--ready-for-review:"
-      end
-    ) as $emoji'
-
-  JQ_TERMINAL_ICON='
-    (
-      if .state == "MERGED" then $icon_merged
-      elif .state == "CLOSED" then $icon_closed
-      elif .isDraft then $icon_draft
-      elif .reviewDecision == "APPROVED" then $icon_approved
-      elif .reviewDecision == "CHANGES_REQUESTED" then $icon_changes
-      else $icon_ready
-      end
-    ) as $icon'
-
-  JQ_TEAMS_STATUS='
-    (
-      if .state == "MERGED" then "🟣 Merged"
-      elif .state == "CLOSED" then "🔴 Closed"
-      elif .isDraft then "⚪ Draft"
-      elif .reviewDecision == "APPROVED" then "✅ Approved"
-      elif .reviewDecision == "CHANGES_REQUESTED" then "❗ Changes requested"
-      else "🟢 Ready"
-      end
-    ) as $status'
-
+  json_fields="$PR_JSON_FIELDS"
 else
   gh_cmd="issue"
   gh_list_filter=(--assignee @me)
-  json_fields="number,title,url,state,updatedAt"
-
-  JQ_SLACK_EMOJI='
-    (
-      if .state == "CLOSED" then ":git--closed:"
-      else ":git--issue:"
-      end
-    ) as $emoji'
-
-  JQ_TERMINAL_ICON='
-    (
-      if .state == "CLOSED" then $icon_issue_closed
-      else $icon_issue_open
-      end
-    ) as $icon'
-
-  JQ_TEAMS_STATUS='
-    (
-      if .state == "CLOSED" then "🔴 Closed"
-      else "🟢 Open"
-      end
-    ) as $status'
+  json_fields="$ISSUE_JSON_FIELDS"
 fi
+
+# ── Presentation, dispatched per item kind ───────────────────────────
+# A single list may hold both PRs and issues, so these branch on .kind
+# rather than on the subcommand.
+
+JQ_SLACK_EMOJI='
+  (
+    if .kind == "pr" then
+      (if .state == "MERGED" then ":git--merged:"
+       elif .state == "CLOSED" then ":git--closed:"
+       elif .isDraft then ":git--draft:"
+       elif .reviewDecision == "APPROVED" then ":git--approved:"
+       elif .reviewDecision == "CHANGES_REQUESTED" then ":git--changes-required:"
+       else ":git--ready-for-review:"
+       end)
+    else
+      (if .state == "CLOSED" then ":git--closed:"
+       else ":git--issue:"
+       end)
+    end
+  ) as $emoji'
+
+JQ_TERMINAL_ICON='
+  (
+    if .kind == "pr" then
+      (if .state == "MERGED" then $icon_merged
+       elif .state == "CLOSED" then $icon_closed
+       elif .isDraft then $icon_draft
+       elif .reviewDecision == "APPROVED" then $icon_approved
+       elif .reviewDecision == "CHANGES_REQUESTED" then $icon_changes
+       else $icon_ready
+       end)
+    else
+      (if .state == "CLOSED" then $icon_issue_closed
+       else $icon_issue_open
+       end)
+    end
+  ) as $icon'
+
+JQ_TEAMS_STATUS='
+  (
+    if .kind == "pr" then
+      (if .state == "MERGED" then "🟣 Merged"
+       elif .state == "CLOSED" then "🔴 Closed"
+       elif .isDraft then "⚪ Draft"
+       elif .reviewDecision == "APPROVED" then "✅ Approved"
+       elif .reviewDecision == "CHANGES_REQUESTED" then "❗ Changes requested"
+       else "🟢 Ready"
+       end)
+    else
+      (if .state == "CLOSED" then "🔴 Closed"
+       else "🟢 Open"
+       end)
+    end
+  ) as $status'
 
 # ── Arg parsing ──────────────────────────────────────────────────────
 
@@ -529,13 +536,16 @@ fetch_json() {
       json+="$item_json"
     done
     json+="]"
+    json=$(echo "$json" | jq --arg kind "$subcommand" '[.[] | . + {kind: $kind}]')
   elif [ "$show_all" = true ]; then
-    json=$(gh "$gh_cmd" list "${gh_list_filter[@]}" --limit 100 --state all --json "$json_fields")
+    json=$(gh "$gh_cmd" list "${gh_list_filter[@]}" --limit 100 --state all --json "$json_fields" \
+      | jq --arg kind "$subcommand" '[.[] | . + {kind: $kind}]')
   else
     json=$(gh "$gh_cmd" list "${gh_list_filter[@]}" --limit "$limit" --state open --json "$json_fields")
     if [ "$subcommand" = "pr" ]; then
       json=$(echo "$json" | jq '[.[] | select(.isDraft | not)]')
     fi
+    json=$(echo "$json" | jq --arg kind "$subcommand" '[.[] | . + {kind: $kind}]')
   fi
 }
 
