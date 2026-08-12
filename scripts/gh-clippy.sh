@@ -523,6 +523,15 @@ if [ ${#users[@]} -gt 1 ] && [ ${#numbers[@]} -gt 0 ]; then
   exit 1
 fi
 
+if [ "$user_explicit" = true ] && [ ${#numbers[@]} -gt 0 ]; then
+  for arg in "${numbers[@]}"; do
+    if parse_spec "$arg"; then
+      echo "Error: cannot combine --user with item specs." >&2
+      exit 1
+    fi
+  done
+fi
+
 # ── CWD repo guard ───────────────────────────────────────────────────
 # Only bare numbers and list mode read the current directory's repo;
 # fully-qualified specs do not, so `gh-clippy pr django:pr:1` works from
