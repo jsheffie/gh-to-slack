@@ -3,8 +3,11 @@
 
 set -euo pipefail
 
-VERSION="1.0.9"
+VERSION="1.0.10"
 RELEASES_URL="https://github.com/jsheffie/gh-to-slack/releases"
+
+# Root that `<repodir>:<type>:<number>` arguments resolve under.
+WORKSPACE_ROOT="${GH_CLIPPY_WORKSPACE:-$HOME/workspace}"
 
 # ── Inline icon support ──────────────────────────────────────────────
 
@@ -66,7 +69,7 @@ ICON_TECHNOLOGIST=$(render_icon "technologist" ":technologist:")
 
 usage() {
   cat <<EOF
-Usage: $(basename "$0") <pr|issue|activity|users> [OPTIONS] [NUMBER ...]
+Usage: $(basename "$0") <pr|issue|activity|users> [OPTIONS] [NUMBER|SPEC ...]
 
 Format GitHub PRs or issues for pasting into Slack.
 Copies rich text to clipboard — Cmd+V into Slack gives clickable links.
@@ -88,8 +91,15 @@ Options:
   -h, --help  Show this help message and exit.
 
 Arguments:
-  NUMBER      One or more PR/issue numbers to show (e.g. 12595 12593).
-              When specified, --all is ignored.
+  NUMBER      One or more PR/issue numbers in the current repo (e.g. 12595).
+              When specified, --all and --limit are ignored and items print
+              in the order listed.
+  SPEC        An item in another repo: <repodir>:<pr|issue>:<number>, e.g.
+              django:pr:100. The repo dir resolves under ~/workspace
+              (override with GH_CLIPPY_WORKSPACE). Specs and numbers may be
+              mixed; PRs and issues may be mixed. Cannot combine with --user.
+              SPEC works from any directory; bare NUMBER requires the
+              current directory to be a GitHub repo.
 
 Examples:
   $(basename "$0") pr                    # Open, ready-for-review PRs
@@ -106,17 +116,14 @@ Examples:
   $(basename "$0") activity --user-display # With usernames shown
   $(basename "$0") activity --limit 5      # 5 items per section
   $(basename "$0") pr --teams              # Rich-text table for MS Teams
+  $(basename "$0") pr django:pr:100                  # PR from another repo
+  $(basename "$0") pr django:pr:100 myrepo:issue:42   # Mixed, in listed order
 EOF
   exit 0
 }
 
-if ! gh repo view --json name >/dev/null 2>&1; then
-  echo "Error: not in a GitHub repository. Run this from inside a repo." >&2
-  exit 1
-fi
-
 usage_hint() {
-  echo "Usage: $(basename "$0") <pr|issue|activity|users> [OPTIONS] [NUMBER ...]" >&2
+  echo "Usage: $(basename "$0") <pr|issue|activity|users> [OPTIONS] [NUMBER|SPEC ...]" >&2
   echo "Run '$(basename "$0") --help' for more information." >&2
 }
 
@@ -378,72 +385,105 @@ pb.setString(plain, forType: .string)
   exit 0
 fi
 
+# ── Field sets per item kind ─────────────────────────────────────────
+# `gh issue view --json isDraft` is an error, so PRs and issues must be
+# fetched with different field sets and then tagged with `kind`.
+PR_JSON_FIELDS="number,title,url,state,isDraft,reviewDecision,updatedAt"
+ISSUE_JSON_FIELDS="number,title,url,state,updatedAt"
+
 # ── Subcommand-specific configuration ────────────────────────────────
+# Applies to list mode and to bare numeric arguments.
 
 if [ "$subcommand" = "pr" ]; then
   gh_cmd="pr"
   gh_list_filter=(--author @me)
-  json_fields="number,title,url,state,isDraft,reviewDecision,updatedAt"
-
-  JQ_SLACK_EMOJI='
-    (
-      if .state == "MERGED" then ":git--merged:"
-      elif .state == "CLOSED" then ":git--closed:"
-      elif .isDraft then ":git--draft:"
-      elif .reviewDecision == "APPROVED" then ":git--approved:"
-      elif .reviewDecision == "CHANGES_REQUESTED" then ":git--changes-required:"
-      else ":git--ready-for-review:"
-      end
-    ) as $emoji'
-
-  JQ_TERMINAL_ICON='
-    (
-      if .state == "MERGED" then $icon_merged
-      elif .state == "CLOSED" then $icon_closed
-      elif .isDraft then $icon_draft
-      elif .reviewDecision == "APPROVED" then $icon_approved
-      elif .reviewDecision == "CHANGES_REQUESTED" then $icon_changes
-      else $icon_ready
-      end
-    ) as $icon'
-
-  JQ_TEAMS_STATUS='
-    (
-      if .state == "MERGED" then "🟣 Merged"
-      elif .state == "CLOSED" then "🔴 Closed"
-      elif .isDraft then "⚪ Draft"
-      elif .reviewDecision == "APPROVED" then "✅ Approved"
-      elif .reviewDecision == "CHANGES_REQUESTED" then "❗ Changes requested"
-      else "🟢 Ready"
-      end
-    ) as $status'
-
+  json_fields="$PR_JSON_FIELDS"
 else
   gh_cmd="issue"
   gh_list_filter=(--assignee @me)
-  json_fields="number,title,url,state,updatedAt"
-
-  JQ_SLACK_EMOJI='
-    (
-      if .state == "CLOSED" then ":git--closed:"
-      else ":git--issue:"
-      end
-    ) as $emoji'
-
-  JQ_TERMINAL_ICON='
-    (
-      if .state == "CLOSED" then $icon_issue_closed
-      else $icon_issue_open
-      end
-    ) as $icon'
-
-  JQ_TEAMS_STATUS='
-    (
-      if .state == "CLOSED" then "🔴 Closed"
-      else "🟢 Open"
-      end
-    ) as $status'
+  json_fields="$ISSUE_JSON_FIELDS"
 fi
+
+# ── Presentation, dispatched per item kind ───────────────────────────
+# A single list may hold both PRs and issues, so these branch on .kind
+# rather than on the subcommand.
+
+JQ_SLACK_EMOJI='
+  (
+    if .kind == "pr" then
+      (if .state == "MERGED" then ":git--merged:"
+       elif .state == "CLOSED" then ":git--closed:"
+       elif .isDraft then ":git--draft:"
+       elif .reviewDecision == "APPROVED" then ":git--approved:"
+       elif .reviewDecision == "CHANGES_REQUESTED" then ":git--changes-required:"
+       else ":git--ready-for-review:"
+       end)
+    else
+      (if .state == "CLOSED" then ":git--closed:"
+       else ":git--issue:"
+       end)
+    end
+  ) as $emoji'
+
+JQ_TERMINAL_ICON='
+  (
+    if .kind == "pr" then
+      (if .state == "MERGED" then $icon_merged
+       elif .state == "CLOSED" then $icon_closed
+       elif .isDraft then $icon_draft
+       elif .reviewDecision == "APPROVED" then $icon_approved
+       elif .reviewDecision == "CHANGES_REQUESTED" then $icon_changes
+       else $icon_ready
+       end)
+    else
+      (if .state == "CLOSED" then $icon_issue_closed
+       else $icon_issue_open
+       end)
+    end
+  ) as $icon'
+
+JQ_TEAMS_STATUS='
+  (
+    if .kind == "pr" then
+      (if .state == "MERGED" then "🟣 Merged"
+       elif .state == "CLOSED" then "🔴 Closed"
+       elif .isDraft then "⚪ Draft"
+       elif .reviewDecision == "APPROVED" then "✅ Approved"
+       elif .reviewDecision == "CHANGES_REQUESTED" then "❗ Changes requested"
+       else "🟢 Ready"
+       end)
+    else
+      (if .state == "CLOSED" then "🔴 Closed"
+       else "🟢 Open"
+       end)
+    end
+  ) as $status'
+
+# Validate a `<repodir>:<pr|issue>:<number>` argument.
+# Returns 1 if the argument contains no colon (i.e. it is a bare number).
+# Exits 1 if it contains a colon but is malformed.
+# On success sets: spec_dir, spec_type, spec_num
+parse_spec() {
+  local arg="$1"
+
+  spec_dir=""; spec_type=""; spec_num=""
+
+  case "$arg" in
+    *:*) ;;
+    *) return 1 ;;
+  esac
+
+  if ! [[ "$arg" =~ ^[^:/]+:(pr|issue):[0-9]+$ ]]; then
+    echo "Error: invalid item spec '$arg'." >&2
+    echo "Expected <repodir>:<pr|issue>:<number>, e.g. django:pr:100" >&2
+    exit 1
+  fi
+
+  spec_dir="${arg%%:*}"
+  spec_num="${arg##*:}"
+  local middle="${arg#*:}"
+  spec_type="${middle%%:*}"
+}
 
 # ── Arg parsing ──────────────────────────────────────────────────────
 
@@ -480,13 +520,46 @@ while [ $# -gt 0 ]; do
       users+=("$1")
       user_explicit=true
       ;;
-    *) numbers+=("$1") ;;
+    *)
+      # Validates and exits on a malformed spec; bare numbers pass through.
+      if parse_spec "$1"; then :; fi
+      numbers+=("$1")
+      ;;
   esac
   shift
 done
 
 if [ ${#users[@]} -gt 1 ] && [ ${#numbers[@]} -gt 0 ]; then
   echo "Error: cannot combine multiple --user with specific numbers." >&2
+  exit 1
+fi
+
+if [ "$user_explicit" = true ] && [ ${#numbers[@]} -gt 0 ]; then
+  for arg in "${numbers[@]}"; do
+    if parse_spec "$arg"; then
+      echo "Error: cannot combine --user with item specs." >&2
+      exit 1
+    fi
+  done
+fi
+
+# ── CWD repo guard ───────────────────────────────────────────────────
+# Only bare numbers and list mode read the current directory's repo;
+# fully-qualified specs do not, so `gh-clippy pr django:pr:1` works from
+# anywhere, including ~/workspace itself.
+needs_cwd_repo=true
+if [ ${#numbers[@]} -gt 0 ]; then
+  needs_cwd_repo=false
+  for arg in "${numbers[@]}"; do
+    if ! parse_spec "$arg"; then
+      needs_cwd_repo=true
+      break
+    fi
+  done
+fi
+
+if [ "$needs_cwd_repo" = true ] && ! gh repo view --json name >/dev/null 2>&1; then
+  echo "Error: not in a GitHub repository. Run this from inside a repo." >&2
   exit 1
 fi
 
@@ -516,26 +589,70 @@ build_user_header() {
   header_terminal="${ICON_TECHNOLOGIST} "$(printf '%s for \033]8;;%s\033\\@%s\033]8;;\033\\' "$label" "$profile_url" "$user")
 }
 
+# Echo one kind-tagged JSON object for a bare number or a repo spec.
+fetch_item() {
+  local arg="$1"
+
+  if parse_spec "$arg"; then
+    local dir="${WORKSPACE_ROOT}/${spec_dir}"
+    if [ ! -d "$dir" ]; then
+      echo "Error: no such repo directory: $dir" >&2
+      exit 1
+    fi
+
+    local fields
+    if [ "$spec_type" = "pr" ]; then
+      fields="$PR_JSON_FIELDS"
+    else
+      fields="$ISSUE_JSON_FIELDS"
+    fi
+
+    local item gh_err_file
+    gh_err_file=$(mktemp)
+    if ! item=$(cd "$dir" && gh "$spec_type" view "$spec_num" --json "$fields" 2>"$gh_err_file"); then
+      if ! git -C "$dir" rev-parse --git-dir >/dev/null 2>&1; then
+        echo "Error: not a GitHub repository: $dir" >&2
+      else
+        echo "Error: could not fetch ${spec_type} #${spec_num} in ${dir}" >&2
+        if [ -s "$gh_err_file" ]; then
+          cat "$gh_err_file" >&2
+        fi
+      fi
+      rm -f "$gh_err_file"
+      exit 1
+    fi
+    rm -f "$gh_err_file"
+
+    echo "$item" | jq --arg kind "$spec_type" '. + {kind: $kind}'
+  else
+    # Bare number — current directory's repo, subcommand's type.
+    gh "$gh_cmd" view "$arg" --json "$json_fields" \
+      | jq --arg kind "$subcommand" '. + {kind: $kind}'
+  fi
+}
+
 # Fetch JSON for the current gh_list_filter, numbers, show_all, and limit settings.
 # Sets: json
 fetch_json() {
   if [ ${#numbers[@]} -gt 0 ]; then
     json="["
     local first=true
-    for num in "${numbers[@]}"; do
+    for arg in "${numbers[@]}"; do
       local item_json
-      item_json=$(gh "$gh_cmd" view "$num" --json "$json_fields")
+      item_json=$(fetch_item "$arg")
       if [ "$first" = true ]; then first=false; else json+=","; fi
       json+="$item_json"
     done
     json+="]"
   elif [ "$show_all" = true ]; then
-    json=$(gh "$gh_cmd" list "${gh_list_filter[@]}" --limit 100 --state all --json "$json_fields")
+    json=$(gh "$gh_cmd" list "${gh_list_filter[@]}" --limit 100 --state all --json "$json_fields" \
+      | jq --arg kind "$subcommand" '[.[] | . + {kind: $kind}]')
   else
     json=$(gh "$gh_cmd" list "${gh_list_filter[@]}" --limit "$limit" --state open --json "$json_fields")
     if [ "$subcommand" = "pr" ]; then
       json=$(echo "$json" | jq '[.[] | select(.isDraft | not)]')
     fi
+    json=$(echo "$json" | jq --arg kind "$subcommand" '[.[] | . + {kind: $kind}]')
   fi
 }
 
@@ -543,8 +660,8 @@ fetch_json() {
 # Requires: json, JQ_SLACK_EMOJI, JQ_TERMINAL_ICON, JQ_TIMESTAMP
 # Sets: html, slack_plain, terminal_plain
 format_output() {
-  html=$(echo "$json" | jq -r "[sort_by(.updatedAt) | reverse | .[:${limit}] | .[] | ${JQ_SLACK_EMOJI} | ${JQ_TIMESTAMP} | (.title | gsub(\"<\";\"&lt;\") | gsub(\">\";\"&gt;\")) as \$safe_title | \"<code>\(\$updated)</code> \(\$emoji) \(\$safe_title) <a href=\\\"\(.url)\\\">#\(.number)</a>\"] | join(\"<br>\")")
-  slack_plain=$(echo "$json" | jq -r "sort_by(.updatedAt) | reverse | .[:${limit}] | .[] | ${JQ_SLACK_EMOJI} | ${JQ_TIMESTAMP} | \"\`\(\$updated)\` \(\$emoji) \(.title) #\(.number)\"")
+  html=$(echo "$json" | jq -r "[${JQ_ORDER} | ${JQ_SLICE} | .[] | ${JQ_SLACK_EMOJI} | ${JQ_TIMESTAMP} | (.title | gsub(\"<\";\"&lt;\") | gsub(\">\";\"&gt;\")) as \$safe_title | \"<code>\(\$updated)</code> \(\$emoji) \(\$safe_title) <a href=\\\"\(.url)\\\">#\(.number)</a>\"] | join(\"<br>\")")
+  slack_plain=$(echo "$json" | jq -r "${JQ_ORDER} | ${JQ_SLICE} | .[] | ${JQ_SLACK_EMOJI} | ${JQ_TIMESTAMP} | \"\`\(\$updated)\` \(\$emoji) \(.title) #\(.number)\"")
   terminal_plain=$(echo "$json" | jq -r \
     --arg icon_merged "$ICON_PR_MERGED" \
     --arg icon_closed "$ICON_PR_CLOSED" \
@@ -554,7 +671,7 @@ format_output() {
     --arg icon_ready "$ICON_PR_READY" \
     --arg icon_issue_open "$ICON_ISSUE_OPEN" \
     --arg icon_issue_closed "$ICON_ISSUE_CLOSED" \
-    "sort_by(.updatedAt) | reverse | .[:${limit}] | .[] | ${JQ_TERMINAL_ICON} | ${JQ_TIMESTAMP} | \"\(\$updated) \(\$icon) \(.title) \u001b]8;;\(.url)\u001b\\\\#\(.number)\u001b]8;;\u001b\\\\\"")
+    "${JQ_ORDER} | ${JQ_SLICE} | .[] | ${JQ_TERMINAL_ICON} | ${JQ_TIMESTAMP} | \"\(\$updated) \(\$icon) \(.title) \u001b]8;;\(.url)\u001b\\\\#\(.number)\u001b]8;;\u001b\\\\\"")
 }
 
 # Format JSON into an HTML table (Link | Status | Title) for MS Teams.
@@ -562,14 +679,25 @@ format_output() {
 # Sets: teams_html, teams_plain
 format_teams_output() {
   local rows_html rows_plain
-  rows_html=$(echo "$json" | jq -r "sort_by(.updatedAt) | reverse | .[:${limit}] | .[] | ${JQ_TEAMS_STATUS} | (.title | gsub(\"<\";\"&lt;\") | gsub(\">\";\"&gt;\")) as \$safe_title | \"<tr><td><a href=\\\"\(.url)\\\">#\(.number)</a></td><td>\(\$status)</td><td>\(\$safe_title)</td></tr>\"" | tr -d '\n')
+  rows_html=$(echo "$json" | jq -r "${JQ_ORDER} | ${JQ_SLICE} | .[] | ${JQ_TEAMS_STATUS} | (.title | gsub(\"<\";\"&lt;\") | gsub(\">\";\"&gt;\")) as \$safe_title | \"<tr><td><a href=\\\"\(.url)\\\">#\(.number)</a></td><td>\(\$status)</td><td>\(\$safe_title)</td></tr>\"" | tr -d '\n')
   teams_html="<table border=\"1\" cellpadding=\"4\" cellspacing=\"0\"><tr><th>Link</th><th>Status</th><th>Title</th></tr>${rows_html}</table>"
 
-  rows_plain=$(echo "$json" | jq -r "sort_by(.updatedAt) | reverse | .[:${limit}] | .[] | ${JQ_TEAMS_STATUS} | \"#\(.number) \(.url)\t\(\$status)\t\(.title)\"")
+  rows_plain=$(echo "$json" | jq -r "${JQ_ORDER} | ${JQ_SLICE} | .[] | ${JQ_TEAMS_STATUS} | \"#\(.number) \(.url)\t\(\$status)\t\(.title)\"")
   teams_plain=$'Link\tStatus\tTitle\n'"${rows_plain}"
 }
 
 # ── Output generation ────────────────────────────────────────────────
+
+# ── Ordering and truncation ──────────────────────────────────────────
+# Order is never rewritten: explicitly named items follow the order given
+# on the command line, and list mode follows the order `gh` returns.
+# Explicit items are also never truncated — naming 11 items must print 11.
+JQ_ORDER='.'
+if [ ${#numbers[@]} -gt 0 ]; then
+  JQ_SLICE='.'
+else
+  JQ_SLICE=".[:${limit}]"
+fi
 
 JQ_TIMESTAMP='
   (.updatedAt | sub("\\.[0-9]+Z$"; "Z") | strptime("%Y-%m-%dT%H:%M:%SZ") | mktime | . - 21600 | strftime("%b %d %I:%M%p")
