@@ -3,7 +3,7 @@
 
 set -euo pipefail
 
-VERSION="1.0.10"
+VERSION="1.0.11"
 RELEASES_URL="https://github.com/jsheffie/gh-to-slack/releases"
 
 # Root that `<repodir>:<type>:<number>` arguments resolve under.
@@ -69,7 +69,7 @@ ICON_TECHNOLOGIST=$(render_icon "technologist" ":technologist:")
 
 usage() {
   cat <<EOF
-Usage: $(basename "$0") <pr|issue|activity|users> [OPTIONS] [NUMBER|SPEC ...]
+Usage: $(basename "$0") <pr|issue|stack|activity|users> [OPTIONS] [NUMBER|SPEC ...]
 
 Format GitHub PRs or issues for pasting into Slack.
 Copies rich text to clipboard — Cmd+V into Slack gives clickable links.
@@ -77,6 +77,9 @@ Copies rich text to clipboard — Cmd+V into Slack gives clickable links.
 Subcommands:
   pr          List PRs authored by you.
   issue       List issues assigned to you.
+  stack       List the PRs of a gh-stack (github/gh-stack), in stack order.
+              Reads "gh stack view --json" from stdin when piped, otherwise
+              runs it in the current repo.
   users       List repository collaborators with links to issues and PRs.
   activity    Show recent issues and PRs across the repo.
 
@@ -86,7 +89,7 @@ Options:
   --all       Show all items regardless of state (open, closed, merged, etc.)
               Default shows only open items.
   --teams     Output a rich-text table (Status | Title | Link) for pasting
-              into MS Teams, instead of Slack rich text. (pr/issue only)
+              into MS Teams, instead of Slack rich text. (pr/issue/stack only)
   --version   Show version and exit.
   -h, --help  Show this help message and exit.
 
@@ -111,6 +114,8 @@ Examples:
   $(basename "$0") pr --user octocat          # Open PRs by octocat
   $(basename "$0") issue --user bob --user ben # Issues for multiple users
   $(basename "$0") pr --limit 20              # Open PRs, up to 20
+  gh stack view --json | $(basename "$0") stack   # Stack PRs, piped
+  $(basename "$0") stack                   # Stack PRs, self-fetched
   $(basename "$0") users                   # List collaborators with links
   $(basename "$0") activity                # Recent issues & PRs
   $(basename "$0") activity --user-display # With usernames shown
@@ -123,12 +128,12 @@ EOF
 }
 
 usage_hint() {
-  echo "Usage: $(basename "$0") <pr|issue|activity|users> [OPTIONS] [NUMBER|SPEC ...]" >&2
+  echo "Usage: $(basename "$0") <pr|issue|stack|activity|users> [OPTIONS] [NUMBER|SPEC ...]" >&2
   echo "Run '$(basename "$0") --help' for more information." >&2
 }
 
 if [ $# -eq 0 ]; then
-  echo "Error: subcommand required (pr, issue, activity, or users)." >&2
+  echo "Error: subcommand required (pr, issue, stack, activity, or users)." >&2
   echo "" >&2
   usage_hint
   exit 1
@@ -138,7 +143,7 @@ subcommand="$1"
 shift
 
 case "$subcommand" in
-  pr|issue|activity|users)
+  pr|issue|stack|activity|users)
     # Valid subcommand — continue
     ;;
   -h|--help)
@@ -157,6 +162,21 @@ case "$subcommand" in
     exit 1
     ;;
 esac
+
+# ── Stray-stdin guard ────────────────────────────────────────────────
+# Only `stack` reads stdin. Piping into any other subcommand would otherwise
+# discard the input silently and print that subcommand's normal listing —
+# output that looks plausible but answers a different question.
+if [ "$subcommand" != "stack" ] && [ -p /dev/fd/0 ]; then
+  echo "Error: '${subcommand}' does not read stdin." >&2
+  if head -c 200 /dev/fd/0 2>/dev/null | grep -q '"branches"'; then
+    echo "That looks like 'gh stack view --json' — did you mean:" >&2
+    echo "  gh stack view --json | $(basename "$0") stack" >&2
+  else
+    echo "Only '$(basename "$0") stack' accepts piped input." >&2
+  fi
+  exit 1
+fi
 
 # ── Users subcommand (short-circuit) ──────────────────────────────────
 
@@ -394,7 +414,7 @@ ISSUE_JSON_FIELDS="number,title,url,state,updatedAt"
 # ── Subcommand-specific configuration ────────────────────────────────
 # Applies to list mode and to bare numeric arguments.
 
-if [ "$subcommand" = "pr" ]; then
+if [ "$subcommand" = "pr" ] || [ "$subcommand" = "stack" ]; then
   gh_cmd="pr"
   gh_list_filter=(--author @me)
   json_fields="$PR_JSON_FIELDS"
@@ -490,6 +510,7 @@ parse_spec() {
 show_all=false
 numbers=()
 limit=10
+limit_explicit=false
 users=()
 user_explicit=false
 teams=false
@@ -510,6 +531,7 @@ while [ $# -gt 0 ]; do
         exit 1
       fi
       limit="$1"
+      limit_explicit=true
       ;;
     --user)
       shift
@@ -528,6 +550,27 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
+
+# A stack is a fixed dependency chain: truncating it or filtering it by
+# author would misrepresent the chain, and item specs name their own items.
+if [ "$subcommand" = "stack" ]; then
+  if [ ${#numbers[@]} -gt 0 ]; then
+    echo "Error: stack takes no NUMBER or SPEC arguments." >&2
+    exit 1
+  fi
+  if [ "$user_explicit" = true ]; then
+    echo "Error: --user cannot be combined with stack." >&2
+    exit 1
+  fi
+  if [ "$limit_explicit" = true ]; then
+    echo "Error: --limit cannot be combined with stack (a stack prints in full)." >&2
+    exit 1
+  fi
+  if [ "$show_all" = true ]; then
+    echo "Error: --all cannot be combined with stack (a stack prints in full)." >&2
+    exit 1
+  fi
+fi
 
 if [ ${#users[@]} -gt 1 ] && [ ${#numbers[@]} -gt 0 ]; then
   echo "Error: cannot combine multiple --user with specific numbers." >&2
@@ -548,7 +591,10 @@ fi
 # fully-qualified specs do not, so `gh-clippy pr django:pr:1` works from
 # anywhere, including ~/workspace itself.
 needs_cwd_repo=true
-if [ ${#numbers[@]} -gt 0 ]; then
+if [ "$subcommand" = "stack" ]; then
+  # Piped stack JSON names its own repo; self-fetch validates separately.
+  needs_cwd_repo=false
+elif [ ${#numbers[@]} -gt 0 ]; then
   needs_cwd_repo=false
   for arg in "${numbers[@]}"; do
     if ! parse_spec "$arg"; then
@@ -631,10 +677,96 @@ fetch_item() {
   fi
 }
 
+# Read `gh stack view --json` (stdin when piped, else self-fetched) and
+# hydrate each branch's PR into the same shape list mode produces.
+#
+# Stack JSON carries only .pr.{number,url,state}; the renderers need the full
+# PR_JSON_FIELDS set, so each PR is re-fetched by number. The repo comes from
+# .pr.url rather than the cwd — piped JSON may describe any repository.
+# Sets: json
+fetch_stack_json() {
+  local stack_json
+  # Test for a pipe specifically, not merely "not a TTY": </dev/null is a
+  # character device and a redirected file is a regular file, so both fall
+  # through to self-fetch instead of blocking on a read that never returns.
+  if [ -p /dev/fd/0 ]; then
+    stack_json=$(cat)
+    if [ -z "${stack_json//[[:space:]]/}" ]; then
+      echo "Error: no JSON on stdin." >&2
+      echo "Expected: gh stack view --json | $(basename "$0") stack" >&2
+      exit 1
+    fi
+  else
+    local gh_err_file
+    gh_err_file=$(mktemp)
+    if ! stack_json=$(gh stack view --json 2>"$gh_err_file"); then
+      echo "Error: could not read the current stack." >&2
+      if [ -s "$gh_err_file" ]; then
+        cat "$gh_err_file" >&2
+      fi
+      echo "Run this from a branch in a stack, or pipe 'gh stack view --json' in." >&2
+      rm -f "$gh_err_file"
+      exit 1
+    fi
+    rm -f "$gh_err_file"
+  fi
+
+  if ! echo "$stack_json" | jq -e 'type == "object" and has("branches")' >/dev/null 2>&1; then
+    echo "Error: input is not 'gh stack view --json' output." >&2
+    exit 1
+  fi
+
+  # Branches added locally but never submitted have no PR to render.
+  local skipped
+  skipped=$(echo "$stack_json" | jq -r '[.branches[] | select(.pr == null) | .name] | join(", ")')
+  if [ -n "$skipped" ]; then
+    local count
+    count=$(echo "$stack_json" | jq '[.branches[] | select(.pr == null)] | length')
+    echo "Note: ${count} branch(es) without a PR skipped (${skipped})" >&2
+  fi
+
+  local refs
+  refs=$(echo "$stack_json" | jq -r '.branches[] | select(.pr != null) | .pr.url')
+  if [ -z "$refs" ]; then
+    echo "Error: no PRs in this stack yet." >&2
+    exit 1
+  fi
+
+  # Stack order is the dependency chain, so it is preserved as given.
+  json="["
+  local first=true url repo num item
+  while IFS= read -r url; do
+    [ -z "$url" ] && continue
+    # https://github.com/<owner>/<repo>/pull/<n>
+    repo=$(echo "$url" | sed -E 's#^https?://[^/]+/([^/]+/[^/]+)/pull/[0-9]+.*$#\1#')
+    num=$(echo "$url" | sed -E 's#^.*/pull/([0-9]+).*$#\1#')
+    if [ "$repo" = "$url" ] || [ "$num" = "$url" ]; then
+      echo "Error: could not parse PR URL: $url" >&2
+      exit 1
+    fi
+    local pr_err_file
+    pr_err_file=$(mktemp)
+    if ! item=$(gh pr view "$num" --repo "$repo" --json "$PR_JSON_FIELDS" 2>"$pr_err_file"); then
+      echo "Error: could not fetch PR #${num} in ${repo}" >&2
+      if [ -s "$pr_err_file" ]; then
+        cat "$pr_err_file" >&2
+      fi
+      rm -f "$pr_err_file"
+      exit 1
+    fi
+    rm -f "$pr_err_file"
+    if [ "$first" = true ]; then first=false; else json+=","; fi
+    json+=$(echo "$item" | jq '. + {kind: "pr"}')
+  done <<< "$refs"
+  json+="]"
+}
+
 # Fetch JSON for the current gh_list_filter, numbers, show_all, and limit settings.
 # Sets: json
 fetch_json() {
-  if [ ${#numbers[@]} -gt 0 ]; then
+  if [ "$subcommand" = "stack" ]; then
+    fetch_stack_json
+  elif [ ${#numbers[@]} -gt 0 ]; then
     json="["
     local first=true
     for arg in "${numbers[@]}"; do
@@ -693,7 +825,7 @@ format_teams_output() {
 # on the command line, and list mode follows the order `gh` returns.
 # Explicit items are also never truncated — naming 11 items must print 11.
 JQ_ORDER='.'
-if [ ${#numbers[@]} -gt 0 ]; then
+if [ ${#numbers[@]} -gt 0 ] || [ "$subcommand" = "stack" ]; then
   JQ_SLICE='.'
 else
   JQ_SLICE=".[:${limit}]"

@@ -15,6 +15,26 @@ Scripts live in `scripts/`:
 2. Uses `jq` to transform JSON into HTML (with `<a>` links) and plain text
 3. Uses an inline Swift snippet (`swift -e`) with `AppKit`/`NSPasteboard` to copy both `public.html` and plain string types to the macOS clipboard — Slack preserves hyperlinks from the HTML pasteboard type
 
+### The `stack` subcommand
+
+`gh stack view --json` reports only `.pr.{number,url,state}` per branch, but the
+renderers need the full `PR_JSON_FIELDS` set. `fetch_stack_json()` therefore
+*hydrates*: it re-fetches each PR by number and emits objects in the same shape
+list mode produces, so all four renderers are reused without modification. Adding
+a field to the stack output means changing the hydration step, never a renderer.
+
+The repository for each `gh pr view` comes from `.pr.url`, not the cwd — piped
+JSON may describe a repo other than the current directory. Stdin is read only
+when it is a pipe (`[ -p /dev/fd/0 ]`), not merely when it is not a TTY, so
+`</dev/null` and inherited descriptors fall through to self-fetch instead of
+blocking on a read that never returns.
+
+`stack` is also the only subcommand that reads stdin at all. A guard before the
+`users` short-circuit rejects a pipe into any other subcommand, because silently
+ignoring it produces a plausible-looking listing that answers a different
+question (`... | gh-clippy pr` prints open PRs, which overlap a stack heavily).
+The guard sniffs the first 200 bytes for `"branches"` to suggest `stack` by name.
+
 **`gh-syms.sh`** — creates branch-named symlinks for git repo directories:
 1. Finds real directories in CWD matching a given prefix (e.g. `django`, `django2`, `django3`)
 2. Reads each directory's current git branch
@@ -46,6 +66,10 @@ Default run (no subcommand) does all three phases: remove → create → list.
 
 # Specific issues by number
 ./scripts/gh-clippy.sh issue 42 57
+
+# PRs of a gh-stack, in stack order (piped, or self-fetched)
+gh stack view --json | ./scripts/gh-clippy.sh stack
+./scripts/gh-clippy.sh stack
 ```
 
 ### gh-syms.sh

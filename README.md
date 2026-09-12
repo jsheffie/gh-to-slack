@@ -4,7 +4,7 @@ macOS shell scripts that format GitHub CLI (`gh`) output (PRs, issues, etc.) int
 
 ## Scripts
 
-- **`gh-clippy`** — formats GitHub PRs/issues as rich text for Slack
+- **`gh-clippy`** — formats GitHub PRs/issues (and `gh stack` stacks) as rich text for Slack
 - **`gh-syms`** — creates branch-named symlinks for git repo directories
 
 ## Install
@@ -50,6 +50,7 @@ brew install jsheffie/tap/gh-to-slack
 - macOS (uses `NSPasteboard` via Swift for clipboard access) — `gh-clippy` only
 - [`gh`](https://cli.github.com/) CLI (authenticated) — `gh-clippy` only
 - [`jq`](https://jqlang.github.io/jq/) — `gh-clippy` only
+- [`gh-stack`](https://github.com/github/gh-stack) extension — `gh-clippy stack` only
 - Swift runtime (ships with Xcode / Command Line Tools) — `gh-clippy` only
 - `git` — `gh-syms` only
 
@@ -85,6 +86,35 @@ current directory to be a GitHub repo.
 Output is no longer re-sorted: `pr` and `issue` list in the order the GitHub CLI
 returns, and named items list in the order you passed them. (`activity` still
 sorts newest-first.)
+
+**Stacked PRs:**
+
+Formats a [`gh stack`](https://github.com/github/gh-stack) stack, one line per PR,
+in stack order (bottom of the chain first).
+
+```bash
+gh stack view --json | gh-clippy stack   # pipe the stack JSON in
+gh-clippy stack                          # or let gh-clippy fetch it
+gh stack view --json | gh-clippy stack --teams   # MS Teams table
+```
+
+`gh-clippy stack` reads `gh stack view --json` from stdin when it is piped one,
+and otherwise runs `gh stack view --json` itself in the current repo. Because the
+piped JSON names its own repository, the piped form works from any directory.
+
+`stack` is the only subcommand that reads stdin. Piping into any other one is an
+error rather than a silent no-op — `gh stack view --json | gh-clippy pr` would
+otherwise discard the JSON and print your open PRs, which overlap a stack enough
+to look correct while answering a different question.
+
+A stack prints in full: `--limit`, `--all`, `--user`, and item numbers are
+rejected, since truncating or filtering a stack would misrepresent the chain.
+Draft PRs are always shown — a draft in a stack is still part of it. Branches
+added locally but not yet submitted have no PR to link, so they are skipped with
+a note on stderr (the clipboard payload stays clean).
+
+Requires the [`gh-stack`](https://github.com/github/gh-stack) extension:
+`gh extension install github/gh-stack`.
 
 **Team/Management Focused:**
 
