@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-VERSION="1.0.10"
+VERSION="1.0.11"
 RELEASES_URL="https://github.com/jsheffie/gh-to-slack/releases"
 README_URL="https://github.com/jsheffie/gh-to-slack"
 
