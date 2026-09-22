@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # Format GitHub PRs or issues for pasting into Slack.
+# jq programs live in single quotes on purpose, and printf formats end in a
+# literal backslash (OSC 8 terminator), so these checks are false positives.
+# shellcheck disable=SC2016,SC1003
 
 set -euo pipefail
 
-VERSION="1.0.11"
+VERSION="1.0.12"
 RELEASES_URL="https://github.com/jsheffie/gh-to-slack/releases"
 
 # Root that `<repodir>:<type>:<number>` arguments resolve under.
@@ -288,13 +291,6 @@ if [ "$subcommand" = "activity" ]; then
     shift
   done
 
-  # ── Shared jq definitions ──────────────────────────────────────────
-
-  JQ_TIMESTAMP='
-    (.updatedAt | sub("\\.[0-9]+Z$"; "Z") | strptime("%Y-%m-%dT%H:%M:%SZ") | mktime | . - 21600 | strftime("%b %d %I:%M%p")
-      | sub("(?<h>[0-9]+:[0-9]+)(?<p>AM|PM)"; "\(.h)\(.p | ascii_downcase)")
-    ) as $updated'
-
   # ── Fetch issues ───────────────────────────────────────────────────
 
   issue_json=$(gh issue list --limit "$limit" --state all --json "number,title,url,state,updatedAt,assignees")
@@ -323,12 +319,12 @@ if [ "$subcommand" = "activity" ]; then
     JQ_ISSUE_USER_TERM='"" as $user'
   fi
 
-  issue_html=$(echo "$issue_json" | jq -r "[sort_by(.updatedAt) | reverse | .[] | ${JQ_ISSUE_EMOJI} | ${JQ_TIMESTAMP} | ${JQ_ISSUE_USER_HTML} | (.title | gsub(\"<\";\"&lt;\") | gsub(\">\";\"&gt;\")) as \$safe_title | \"<code>\(\$updated)</code> \(\$emoji) \(\$safe_title)\(\$user) <a href=\\\"\(.url)\\\">#\(.number)</a>\"] | join(\"<br>\")")
-  issue_plain=$(echo "$issue_json" | jq -r "sort_by(.updatedAt) | reverse | .[] | ${JQ_ISSUE_EMOJI} | ${JQ_TIMESTAMP} | ${JQ_ISSUE_USER_PLAIN} | \"\`\(\$updated)\` \(\$emoji) \(.title)\(\$user) #\(.number)\"")
+  issue_html=$(echo "$issue_json" | jq -r "[sort_by(.updatedAt) | reverse | .[] | ${JQ_ISSUE_EMOJI} | ${JQ_ISSUE_USER_HTML} | (.title | gsub(\"<\";\"&lt;\") | gsub(\">\";\"&gt;\")) as \$safe_title | \"\(\$emoji) \(\$safe_title)\(\$user) <a href=\\\"\(.url)\\\">#\(.number)</a>\"] | join(\"<br>\")")
+  issue_plain=$(echo "$issue_json" | jq -r "sort_by(.updatedAt) | reverse | .[] | ${JQ_ISSUE_EMOJI} | ${JQ_ISSUE_USER_PLAIN} | \"\(\$emoji) \(.title)\(\$user) #\(.number)\"")
   issue_terminal=$(echo "$issue_json" | jq -r \
     --arg icon_issue_open "$ICON_ISSUE_OPEN" \
     --arg icon_issue_closed "$ICON_ISSUE_CLOSED" \
-    "sort_by(.updatedAt) | reverse | .[] | ${JQ_ISSUE_ICON} | ${JQ_TIMESTAMP} | ${JQ_ISSUE_USER_TERM} | \"\(\$updated) \(\$icon) \(.title)\(\$user) \u001b]8;;\(.url)\u001b\\\\#\(.number)\u001b]8;;\u001b\\\\\"")
+    "sort_by(.updatedAt) | reverse | .[] | ${JQ_ISSUE_ICON} | ${JQ_ISSUE_USER_TERM} | \"\(\$icon) \(.title)\(\$user) \u001b]8;;\(.url)\u001b\\\\#\(.number)\u001b]8;;\u001b\\\\\"")
 
   # ── Fetch PRs ──────────────────────────────────────────────────────
 
@@ -366,8 +362,8 @@ if [ "$subcommand" = "activity" ]; then
     JQ_PR_USER_TERM='"" as $user'
   fi
 
-  pr_html=$(echo "$pr_json" | jq -r "[sort_by(.updatedAt) | reverse | .[] | ${JQ_PR_EMOJI} | ${JQ_TIMESTAMP} | ${JQ_PR_USER_HTML} | (.title | gsub(\"<\";\"&lt;\") | gsub(\">\";\"&gt;\")) as \$safe_title | \"<code>\(\$updated)</code> \(\$emoji) \(\$safe_title)\(\$user) <a href=\\\"\(.url)\\\">#\(.number)</a>\"] | join(\"<br>\")")
-  pr_plain=$(echo "$pr_json" | jq -r "sort_by(.updatedAt) | reverse | .[] | ${JQ_PR_EMOJI} | ${JQ_TIMESTAMP} | ${JQ_PR_USER_PLAIN} | \"\`\(\$updated)\` \(\$emoji) \(.title)\(\$user) #\(.number)\"")
+  pr_html=$(echo "$pr_json" | jq -r "[sort_by(.updatedAt) | reverse | .[] | ${JQ_PR_EMOJI} | ${JQ_PR_USER_HTML} | (.title | gsub(\"<\";\"&lt;\") | gsub(\">\";\"&gt;\")) as \$safe_title | \"\(\$emoji) \(\$safe_title)\(\$user) <a href=\\\"\(.url)\\\">#\(.number)</a>\"] | join(\"<br>\")")
+  pr_plain=$(echo "$pr_json" | jq -r "sort_by(.updatedAt) | reverse | .[] | ${JQ_PR_EMOJI} | ${JQ_PR_USER_PLAIN} | \"\(\$emoji) \(.title)\(\$user) #\(.number)\"")
   pr_terminal=$(echo "$pr_json" | jq -r \
     --arg icon_merged "$ICON_PR_MERGED" \
     --arg icon_closed "$ICON_PR_CLOSED" \
@@ -375,7 +371,7 @@ if [ "$subcommand" = "activity" ]; then
     --arg icon_approved "$ICON_PR_APPROVED" \
     --arg icon_changes "$ICON_PR_CHANGES" \
     --arg icon_ready "$ICON_PR_READY" \
-    "sort_by(.updatedAt) | reverse | .[] | ${JQ_PR_ICON} | ${JQ_TIMESTAMP} | ${JQ_PR_USER_TERM} | \"\(\$updated) \(\$icon) \(.title)\(\$user) \u001b]8;;\(.url)\u001b\\\\#\(.number)\u001b]8;;\u001b\\\\\"")
+    "sort_by(.updatedAt) | reverse | .[] | ${JQ_PR_ICON} | ${JQ_PR_USER_TERM} | \"\(\$icon) \(.title)\(\$user) \u001b]8;;\(.url)\u001b\\\\#\(.number)\u001b]8;;\u001b\\\\\"")
 
   # ── Assemble sections ──────────────────────────────────────────────
 
@@ -408,8 +404,8 @@ fi
 # ── Field sets per item kind ─────────────────────────────────────────
 # `gh issue view --json isDraft` is an error, so PRs and issues must be
 # fetched with different field sets and then tagged with `kind`.
-PR_JSON_FIELDS="number,title,url,state,isDraft,reviewDecision,updatedAt"
-ISSUE_JSON_FIELDS="number,title,url,state,updatedAt"
+PR_JSON_FIELDS="number,title,url,state,isDraft,reviewDecision"
+ISSUE_JSON_FIELDS="number,title,url,state"
 
 # ── Subcommand-specific configuration ────────────────────────────────
 # Applies to list mode and to bare numeric arguments.
@@ -789,11 +785,11 @@ fetch_json() {
 }
 
 # Format JSON into html, slack_plain, and terminal_plain.
-# Requires: json, JQ_SLACK_EMOJI, JQ_TERMINAL_ICON, JQ_TIMESTAMP
+# Requires: json, JQ_SLACK_EMOJI, JQ_TERMINAL_ICON
 # Sets: html, slack_plain, terminal_plain
 format_output() {
-  html=$(echo "$json" | jq -r "[${JQ_ORDER} | ${JQ_SLICE} | .[] | ${JQ_SLACK_EMOJI} | ${JQ_TIMESTAMP} | (.title | gsub(\"<\";\"&lt;\") | gsub(\">\";\"&gt;\")) as \$safe_title | \"<code>\(\$updated)</code> \(\$emoji) \(\$safe_title) <a href=\\\"\(.url)\\\">#\(.number)</a>\"] | join(\"<br>\")")
-  slack_plain=$(echo "$json" | jq -r "${JQ_ORDER} | ${JQ_SLICE} | .[] | ${JQ_SLACK_EMOJI} | ${JQ_TIMESTAMP} | \"\`\(\$updated)\` \(\$emoji) \(.title) #\(.number)\"")
+  html=$(echo "$json" | jq -r "[${JQ_ORDER} | ${JQ_SLICE} | .[] | ${JQ_SLACK_EMOJI} | (.title | gsub(\"<\";\"&lt;\") | gsub(\">\";\"&gt;\")) as \$safe_title | \"\(\$emoji) \(\$safe_title) <a href=\\\"\(.url)\\\">#\(.number)</a>\"] | join(\"<br>\")")
+  slack_plain=$(echo "$json" | jq -r "${JQ_ORDER} | ${JQ_SLICE} | .[] | ${JQ_SLACK_EMOJI} | \"\(\$emoji) \(.title) #\(.number)\"")
   terminal_plain=$(echo "$json" | jq -r \
     --arg icon_merged "$ICON_PR_MERGED" \
     --arg icon_closed "$ICON_PR_CLOSED" \
@@ -803,7 +799,7 @@ format_output() {
     --arg icon_ready "$ICON_PR_READY" \
     --arg icon_issue_open "$ICON_ISSUE_OPEN" \
     --arg icon_issue_closed "$ICON_ISSUE_CLOSED" \
-    "${JQ_ORDER} | ${JQ_SLICE} | .[] | ${JQ_TERMINAL_ICON} | ${JQ_TIMESTAMP} | \"\(\$updated) \(\$icon) \(.title) \u001b]8;;\(.url)\u001b\\\\#\(.number)\u001b]8;;\u001b\\\\\"")
+    "${JQ_ORDER} | ${JQ_SLICE} | .[] | ${JQ_TERMINAL_ICON} | \"\(\$icon) \(.title) \u001b]8;;\(.url)\u001b\\\\#\(.number)\u001b]8;;\u001b\\\\\"")
 }
 
 # Format JSON into an HTML table (Link | Status | Title) for MS Teams.
@@ -831,10 +827,6 @@ else
   JQ_SLICE=".[:${limit}]"
 fi
 
-JQ_TIMESTAMP='
-  (.updatedAt | sub("\\.[0-9]+Z$"; "Z") | strptime("%Y-%m-%dT%H:%M:%SZ") | mktime | . - 21600 | strftime("%b %d %I:%M%p")
-    | sub("(?<h>[0-9]+:[0-9]+)(?<p>AM|PM)"; "\(.h)\(.p | ascii_downcase)")
-  ) as $updated'
 
 # ── Teams table (short-circuit) ───────────────────────────────────────
 
