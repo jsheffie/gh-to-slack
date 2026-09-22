@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-VERSION="1.0.11"
+VERSION="1.0.12"
 RELEASES_URL="https://github.com/jsheffie/gh-to-slack/releases"
 README_URL="https://github.com/jsheffie/gh-to-slack"
 
@@ -120,7 +120,7 @@ do_list() {
     if dir_matches "$target"; then
       list_syms+=("${sym#./}")
       list_targets+=("$target")
-      [ ${#target} -gt $maxlen ] && maxlen=${#target}
+      [ "${#target}" -gt "$maxlen" ] && maxlen=${#target}
     fi
   done < <(find . -maxdepth 1 -type l -print0 | sort -z)
 

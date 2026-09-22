@@ -103,7 +103,7 @@ gh stack view --json | ./scripts/gh-clippy.sh stack
 
 - Scripts use `set -euo pipefail`
 - PR state is mapped to custom Slack emoji (`:git--merged:`, `:git--approved:`, etc.) via jq
-- Timestamps are converted from UTC to CST (UTC-6 hardcoded offset) and formatted as `Mon DD H:MMam/pm`
+- Output lines carry no date: `emoji title #number` (`activity` still sorts by `updatedAt`)
 
 ## Versioning
 

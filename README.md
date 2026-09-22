@@ -147,7 +147,7 @@ Terminal output uses ANSI-colored status icons for quick visual scanning. The `#
 
 ### PR Status Emoji (Slack)
 
-Each line is formatted as: `date emoji title #number`. PRs use these status emoji:
+Each line is formatted as: `emoji title #number`. PRs use these status emoji:
 
 | Emoji | State |
 |---|---|
